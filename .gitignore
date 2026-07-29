@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Secrets and per-server config (never commit these)
+**/.dev.vars
+**/config.json
+
+# Build outputs
+**/dist/
+**/.next/
+**/out/
+**/.wrangler/
+agent/daemon/
+agent/installer/vendor/*.exe
+agent/installer/Output/
+
+# Local tooling / editor
+.claude/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store

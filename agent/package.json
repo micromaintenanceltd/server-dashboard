@@ -1,0 +1,29 @@
+{
+  "name": "mml-server-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MML server monitoring agent. Collects health data and POSTs it to the dashboard API.",
+  "bin": "src/main.js",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/agent.js",
+    "run:agent": "node src/main.js run",
+    "once": "node src/run-once.js",
+    "enroll": "node src/main.js enroll",
+    "install-service": "node service-install.js",
+    "uninstall-service": "node service-uninstall.js",
+    "build:exe": "pkg . --targets node22-win-x64 --output dist/mml-agent.exe"
+  },
+  "dependencies": {
+    "node-windows": "^1.0.0-beta.8"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.3.0"
+  },
+  "pkg": {
+    "scripts": "src/**/*.js",
+    "assets": ["package.json"],
+    "targets": ["node22-win-x64"],
+    "outputPath": "dist"
+  }
+}

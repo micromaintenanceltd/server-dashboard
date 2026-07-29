@@ -1,0 +1,25 @@
+{
+  "//": "Copy to config.json and fill in. config.json is gitignored.",
+
+  "apiUrl": "https://mml-dashboard-api.YOUR-SUBDOMAIN.workers.dev",
+  "apiKey": "mml_PASTE_THE_PER_SERVER_KEY_HERE",
+
+  "intervalMinutes": 5,
+
+  "//avProduct": "Display name reported for the AV product.",
+  "avProduct": "Bitdefender GravityZone",
+
+  "//avServiceNames": "Windows service names that indicate the Bitdefender agent is running. First one found is used.",
+  "avServiceNames": ["EPProtectedService", "EPSecurityService", "EPUpdateService"],
+
+  "//watchServices": "Critical services to watch. running/stopped is reported for each; stopped + critical is flagged.",
+  "watchServices": [
+    { "name": "EPSecurityService", "displayName": "Bitdefender Endpoint Security", "critical": true },
+    { "name": "MSSQLSERVER", "displayName": "SQL Server", "critical": true },
+    { "name": "W32Time", "displayName": "Windows Time", "critical": false },
+    { "name": "LanmanServer", "displayName": "Server (file sharing)", "critical": false }
+  ],
+
+  "//topProcessCount": "How many top processes (by memory) to include as a light summary. 0 to disable.",
+  "topProcessCount": 5
+}

@@ -1,0 +1,14 @@
+# Copy this file to `.dev.vars` for local `wrangler dev`.
+# `.dev.vars` is gitignored. These become secrets/vars during local dev.
+
+# Admin token required by the create/delete/rotate-key routes.
+ADMIN_TOKEN=local-dev-admin-token-change-me
+
+# Enrollment token baked into the installer; lets a new server self-register.
+ENROLL_TOKEN=local-dev-enroll-token-change-me
+
+# Leave the IP allowlist empty locally so requests from your machine are allowed.
+DASHBOARD_IP_ALLOWLIST=
+
+# Minutes without a report before a server is treated as stale/offline.
+STALE_AFTER_MINUTES=15

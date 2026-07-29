@@ -1,0 +1,38 @@
+<!--
+  WinSW service definition for the MML Server Agent.
+
+  WinSW (https://github.com/winsw/winsw) is a small service wrapper. We ship its
+  binary renamed to mml-agent-service.exe alongside this file. WinSW reads a
+  config file with the SAME base name (mml-agent-service.xml), so the two must
+  sit next to each other and next to mml-agent.exe.
+
+  %BASE% is provided by WinSW and resolves to the folder this file lives in, so
+  the paths work wherever the installer puts them (Program Files by default).
+
+  The service runs `mml-agent.exe run` as LocalSystem, which is required to read
+  Windows service state and the Windows Update history. This is local read
+  access only; it opens no inbound network access.
+-->
+<service>
+  <id>MMLServerAgent</id>
+  <name>MML Server Agent</name>
+  <description>Micro Maintenance server monitoring agent. Reports server health to the MML dashboard over outbound HTTPS.</description>
+
+  <executable>%BASE%\mml-agent.exe</executable>
+  <arguments>run</arguments>
+
+  <!-- Start automatically at boot. -->
+  <startmode>Automatic</startmode>
+
+  <!-- Restart if the process exits unexpectedly. -->
+  <onfailure action="restart" delay="10 sec" />
+  <resetfailure>1 hour</resetfailure>
+
+  <!-- Roll logs by size so they never grow without bound. Logs land in a
+       'logs' folder next to the executable. -->
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

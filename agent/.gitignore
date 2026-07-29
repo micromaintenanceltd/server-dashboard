@@ -1,0 +1,11 @@
+node_modules/
+config.json
+daemon/
+*.log
+
+# Build outputs
+dist/
+
+# Installer: vendored WinSW binary and compiled installers are not committed
+installer/vendor/*.exe
+installer/Output/

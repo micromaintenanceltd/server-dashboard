@@ -1,0 +1,67 @@
+# Cloudflare Worker configuration for the MML server dashboard API.
+#
+# Before deploying you will need to:
+#   1. Run:  npx wrangler d1 create mml_dashboard
+#      then paste the returned database_id below.
+#   2. Set the IP allowlist and any secrets (see [vars] and the README).
+#
+# Local development does not need a real database_id; wrangler creates a
+# local SQLite file automatically when you use --local.
+
+name = "mml-dashboard-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# D1 database binding (SQLite).
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "mml_dashboard"
+# Replace with the id returned by `wrangler d1 create mml_dashboard`.
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# ---------------------------------------------------------------------------
+# Durable Objects: one instance per server holds live state + a stale alarm.
+# ---------------------------------------------------------------------------
+[[durable_objects.bindings]]
+name = "SERVER_STATE"
+class_name = "ServerState"
+
+# Single global instance that rate limits the enrollment endpoint.
+[[durable_objects.bindings]]
+name = "ENROLL_LIMITER"
+class_name = "EnrollLimiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ServerState"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["EnrollLimiter"]
+
+# ---------------------------------------------------------------------------
+# Plain (non-secret) vars.
+#
+# DASHBOARD_IP_ALLOWLIST: comma separated list of WAN IPs and/or CIDR ranges
+# that are allowed to call the technician/admin routes. The agent report
+# route is exempt (agents connect from client sites and use a Bearer key).
+# Leave empty during local dev to allow all; set it before going live.
+#
+# STALE_AFTER_MINUTES: minutes without a report before a server is marked
+# stale/offline (brief asks for 15).
+# ---------------------------------------------------------------------------
+[vars]
+DASHBOARD_IP_ALLOWLIST = ""
+STALE_AFTER_MINUTES = "15"
+
+# ADMIN_TOKEN and ENROLL_TOKEN are secrets, not vars. Set them with:
+#   npx wrangler secret put ADMIN_TOKEN
+#   npx wrangler secret put ENROLL_TOKEN
+# ADMIN_TOKEN guards the dashboard admin actions (create/delete/rotate keys).
+# ENROLL_TOKEN is baked into the signed installer and lets a new server
+# self-enrol; it can only create a server record and receive that server's
+# reporting key. For local dev, put both in a .dev.vars file (see
+# .dev.vars.example).
