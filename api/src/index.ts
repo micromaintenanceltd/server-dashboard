@@ -9,7 +9,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { Env, ReportPayload, ServerRow, ServerStatus } from './types';
+import type { Env, ReportPayload, ServerRow, ServerStatus, CheckRunPayload } from './types';
 import { generateApiKey, hashApiKey, keyPrefix } from './crypto';
 import { isIpAllowed } from './ipAllowlist';
 
@@ -226,6 +226,66 @@ app.post('/api/enroll', async (c) => {
   );
 });
 
+// --- POST /api/checks : agent submits a weekly check run ------------------
+// Same per-server Bearer key as /api/report. Stores the run with per-check
+// findings and a computed overall status.
+app.post('/api/checks', async (c) => {
+  const auth = c.req.header('Authorization') || '';
+  const rawKey = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!rawKey) return c.json({ error: 'Missing Bearer API key.' }, 401);
+
+  const hash = await hashApiKey(rawKey);
+  const server = await c.env.DB.prepare(`SELECT id FROM servers WHERE api_key_hash = ?1`)
+    .bind(hash)
+    .first<{ id: string }>();
+  if (!server) return c.json({ error: 'Invalid API key.' }, 401);
+
+  let payload: CheckRunPayload;
+  try {
+    payload = (await c.req.json()) as CheckRunPayload;
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  if (results.length === 0) {
+    return c.json({ error: 'results array is required.' }, 400);
+  }
+
+  // Count statuses and derive the overall result: any fail -> fail, else any
+  // warn -> warn, else pass.
+  let pass = 0;
+  let warn = 0;
+  let fail = 0;
+  for (const r of results) {
+    if (r.status === 'fail') fail++;
+    else if (r.status === 'warn') warn++;
+    else pass++;
+  }
+  const overall = fail > 0 ? 'fail' : warn > 0 ? 'warn' : 'pass';
+  const runAt = new Date().toISOString();
+
+  await c.env.DB.prepare(
+    `INSERT INTO check_runs
+       (server_id, overall_status, pass_count, warn_count, fail_count,
+        results_json, agent_version, run_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)`
+  )
+    .bind(
+      server.id,
+      overall,
+      pass,
+      warn,
+      fail,
+      JSON.stringify(results),
+      payload.agent_version ?? null,
+      runAt
+    )
+    .run();
+
+  return c.json({ ok: true, overall_status: overall, pass, warn, fail, run_at: runAt });
+});
+
 // --- GET /api/servers : list all servers with latest status ---------------
 app.get('/api/servers', async (c) => {
   const block = requireAllowedIp(c);
@@ -234,17 +294,23 @@ app.get('/api/servers', async (c) => {
   const staleAfter = staleMinutes(c.env);
   const now = Date.now();
 
-  // Roster plus the latest report snapshot columns (single query, LEFT JOIN
-  // onto the most recent report per server).
+  // Roster plus the latest report snapshot and the latest weekly check summary
+  // (single query, LEFT JOINs onto the most recent report/check per server).
   const { results } = await c.env.DB.prepare(
     `SELECT s.id, s.name, s.client_name, s.location, s.current_status,
             s.created_at, s.last_seen_at, s.api_key_prefix,
             r.cpu_percent, r.ram_used_mb, r.ram_total_mb, r.disk_json,
-            r.uptime_seconds, r.services_json, r.reported_at
+            r.uptime_seconds, r.services_json, r.reported_at,
+            cr.overall_status AS check_status, cr.fail_count AS check_fail,
+            cr.warn_count AS check_warn, cr.pass_count AS check_pass,
+            cr.run_at AS check_run_at
      FROM servers s
      LEFT JOIN server_reports r
        ON r.id = (SELECT id FROM server_reports
                   WHERE server_id = s.id ORDER BY reported_at DESC LIMIT 1)
+     LEFT JOIN check_runs cr
+       ON cr.id = (SELECT id FROM check_runs
+                   WHERE server_id = s.id ORDER BY run_at DESC LIMIT 1)
      ORDER BY s.client_name, s.name`
   ).all();
 
@@ -265,6 +331,15 @@ app.get('/api/servers', async (c) => {
           uptime_seconds: row.uptime_seconds,
           services: safeParse(row.services_json, {}),
           reported_at: row.reported_at,
+        }
+      : null,
+    latest_check: row.check_run_at
+      ? {
+          overall_status: row.check_status,
+          fail_count: row.check_fail,
+          warn_count: row.check_warn,
+          pass_count: row.check_pass,
+          run_at: row.check_run_at,
         }
       : null,
   }));
@@ -309,6 +384,23 @@ app.get('/api/servers/:id', async (c) => {
     .bind(id, sevenDaysAgo)
     .all();
 
+  // Latest weekly check run (full findings).
+  const latestCheck = await c.env.DB.prepare(
+    `SELECT overall_status, pass_count, warn_count, fail_count, results_json,
+            agent_version, run_at
+     FROM check_runs WHERE server_id = ?1 ORDER BY run_at DESC LIMIT 1`
+  )
+    .bind(id)
+    .first<any>();
+
+  // Recent check history (summaries only) for a small trend.
+  const { results: checkHistory } = await c.env.DB.prepare(
+    `SELECT overall_status, pass_count, warn_count, fail_count, run_at
+     FROM check_runs WHERE server_id = ?1 ORDER BY run_at DESC LIMIT 12`
+  )
+    .bind(id)
+    .all();
+
   return c.json({
     server: {
       id: server.id,
@@ -320,6 +412,24 @@ app.get('/api/servers/:id', async (c) => {
       created_at: server.created_at,
       api_key_prefix: server.api_key_prefix,
     },
+    latest_check: latestCheck
+      ? {
+          overall_status: latestCheck.overall_status,
+          pass_count: latestCheck.pass_count,
+          warn_count: latestCheck.warn_count,
+          fail_count: latestCheck.fail_count,
+          results: safeParse(latestCheck.results_json, []),
+          agent_version: latestCheck.agent_version,
+          run_at: latestCheck.run_at,
+        }
+      : null,
+    check_history: (checkHistory as any[]).map((r) => ({
+      overall_status: r.overall_status,
+      pass_count: r.pass_count,
+      warn_count: r.warn_count,
+      fail_count: r.fail_count,
+      run_at: r.run_at,
+    })),
     latest_report: latest
       ? {
           cpu_percent: latest.cpu_percent,

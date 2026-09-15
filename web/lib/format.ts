@@ -1,7 +1,7 @@
 // Display helpers. All timestamps render in UK time (Europe/London), which
 // handles GMT/BST automatically via the Intl API.
 
-import type { ServerStatus } from './types';
+import type { ServerStatus, CheckStatus } from './types';
 
 const UK_TZ = 'Europe/London';
 
@@ -84,4 +84,14 @@ export const STATUS_META: Record<
     text: 'text-status-pending',
     badge: 'bg-slate-100 text-slate-700 border-slate-200',
   },
+};
+
+// Check status metadata (pass / warn / fail).
+export const CHECK_META: Record<
+  CheckStatus,
+  { label: string; dot: string; badge: string }
+> = {
+  pass: { label: 'Pass', dot: 'bg-status-online', badge: 'bg-green-100 text-green-800 border-green-200' },
+  warn: { label: 'Warn', dot: 'bg-status-stale', badge: 'bg-amber-100 text-amber-800 border-amber-200' },
+  fail: { label: 'Fail', dot: 'bg-status-offline', badge: 'bg-red-100 text-red-800 border-red-200' },
 };

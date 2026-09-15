@@ -36,14 +36,29 @@ async function collectReport(cfg) {
 
 // POST a report to the API using the per-server Bearer key.
 async function postReport(cfg, report) {
-  const url = cfg.apiUrl.replace(/\/+$/, '') + '/api/report';
+  return postJson(cfg, '/api/report', report);
+}
+
+// POST a weekly check run to the API.
+async function postCheckRun(cfg, results) {
+  return postJson(cfg, '/api/checks', {
+    results,
+    agent_version: AGENT_VERSION,
+    run_at: new Date().toISOString(),
+  });
+}
+
+// Shared POST helper. Outbound only; the response is used solely to detect
+// failure, never acted on. See INSTALL.md on the one-directional design.
+async function postJson(cfg, path, body) {
+  const url = cfg.apiUrl.replace(/\/+$/, '') + path;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${cfg.apiKey}`,
     },
-    body: JSON.stringify(report),
+    body: JSON.stringify(body),
   });
 
   const text = await res.text();
@@ -53,4 +68,4 @@ async function postReport(cfg, report) {
   return text;
 }
 
-module.exports = { collectReport, postReport, AGENT_VERSION };
+module.exports = { collectReport, postReport, postCheckRun, AGENT_VERSION };

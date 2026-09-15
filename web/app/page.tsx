@@ -6,7 +6,7 @@ import { fetchServers } from '@/lib/api';
 import type { ServerListItem, ServersResponse, ServerStatus } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { UsageBar } from '@/components/UsageBar';
-import { relativeAge, formatMb } from '@/lib/format';
+import { relativeAge, formatMb, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
 
@@ -137,6 +137,23 @@ function ServerCard({ server }: { server: ServerListItem }) {
             <WarnIcon />
             {stoppedCritical.length} critical stopped
           </span>
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5 border-t border-slate-100 pt-2 text-xs text-slate-500">
+        {server.latest_check ? (
+          <>
+            <span className={`h-2 w-2 rounded-full ${CHECK_META[server.latest_check.overall_status].dot}`} />
+            <span>
+              Weekly check: {CHECK_META[server.latest_check.overall_status].label}
+              {server.latest_check.fail_count + server.latest_check.warn_count > 0
+                ? ` (${server.latest_check.fail_count} fail, ${server.latest_check.warn_count} warn)`
+                : ''}
+            </span>
+            <span className="ml-auto">{relativeAge(server.latest_check.run_at)}</span>
+          </>
+        ) : (
+          <span className="text-slate-400">No weekly check yet</span>
         )}
       </div>
     </Link>

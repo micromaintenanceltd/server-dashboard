@@ -90,3 +90,23 @@ export interface ReportMeta {
   local_ip: string;
   agent_version?: string;
 }
+
+// --- Weekly checks ---
+
+export type CheckStatus = 'pass' | 'warn' | 'fail';
+
+// One finding within a check run.
+export interface CheckResult {
+  id: string; // stable check id, e.g. "windows-server-backup"
+  title: string; // human label, e.g. "Windows Server Backup"
+  status: CheckStatus;
+  detail: string; // short human explanation of the result
+  value?: unknown; // optional structured value (numbers, dates, lists)
+}
+
+// The payload an agent POSTs to /api/checks for a weekly run.
+export interface CheckRunPayload {
+  results: CheckResult[];
+  run_at?: string; // agent-side time; the API stamps its own too
+  agent_version?: string;
+}

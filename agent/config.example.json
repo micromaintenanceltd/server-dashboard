@@ -1,25 +1,45 @@
 {
-  "//": "Copy to config.json and fill in. config.json is gitignored.",
+  "//": "Copy to config.json and fill in. config.json is gitignored. The installer writes this file automatically at enrollment; this example is for the from-source/dev path.",
 
   "apiUrl": "https://mml-dashboard-api.YOUR-SUBDOMAIN.workers.dev",
   "apiKey": "mml_PASTE_THE_PER_SERVER_KEY_HERE",
 
   "intervalMinutes": 5,
 
-  "//avProduct": "Display name reported for the AV product.",
   "avProduct": "Bitdefender GravityZone",
-
-  "//avServiceNames": "Windows service names that indicate the Bitdefender agent is running. First one found is used.",
   "avServiceNames": ["EPProtectedService", "EPSecurityService", "EPUpdateService"],
 
-  "//watchServices": "Critical services to watch. running/stopped is reported for each; stopped + critical is flagged.",
   "watchServices": [
     { "name": "EPSecurityService", "displayName": "Bitdefender Endpoint Security", "critical": true },
     { "name": "MSSQLSERVER", "displayName": "SQL Server", "critical": true },
-    { "name": "W32Time", "displayName": "Windows Time", "critical": false },
-    { "name": "LanmanServer", "displayName": "Server (file sharing)", "critical": false }
+    { "name": "W32Time", "displayName": "Windows Time", "critical": false }
   ],
 
-  "//topProcessCount": "How many top processes (by memory) to include as a light summary. 0 to disable.",
-  "topProcessCount": 5
+  "topProcessCount": 5,
+
+  "//settings": "Local settings web page. Bound to 127.0.0.1 only (loopback). Set enabled:false to turn it off.",
+  "settings": { "enabled": true, "port": 8000 },
+
+  "//checks": "Weekly audit run. schedule is UK time. Any check can be disabled with enabled:false.",
+  "checks": {
+    "schedule": { "dayOfWeek": "monday", "hour": 7, "minute": 0 },
+
+    "windowsServerBackup": { "enabled": true, "maxAgeHours": 36, "requireInstalled": false },
+
+    "//requiredServices": "Per-server services that MUST be running. Use exact Windows service names.",
+    "requiredServices": {
+      "list": [
+        { "name": "MSSQLSERVER", "displayName": "SQL Server" },
+        { "name": "VeeamBackupSvc", "displayName": "Veeam Backup" }
+      ]
+    },
+
+    "diskSpace": { "enabled": true, "warnFreePercent": 15, "failFreePercent": 7 },
+    "pendingUpdates": { "enabled": true, "warnAny": true, "failCount": 20 },
+    "lastUpdate": { "enabled": true, "maxDays": 45 },
+    "antivirus": { "enabled": true, "scanStaleDays": 7 },
+    "pendingReboot": { "enabled": true },
+    "firewall": { "enabled": true },
+    "eventLogErrors": { "enabled": true, "days": 7, "warnCount": 50, "failCount": 0 }
+  }
 }

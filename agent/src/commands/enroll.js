@@ -104,6 +104,8 @@ async function enroll(argv) {
     avServiceNames: defaults.avServiceNames,
     watchServices: defaults.watchServices,
     topProcessCount: defaults.topProcessCount,
+    settings: defaults.settings,
+    checks: defaults.checks,
   };
 
   const written = writeConfig(cfg);

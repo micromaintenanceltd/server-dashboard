@@ -32,6 +32,24 @@ export interface LatestSummary {
   reported_at: string;
 }
 
+export type CheckStatus = 'pass' | 'warn' | 'fail';
+
+export interface CheckResult {
+  id: string;
+  title: string;
+  status: CheckStatus;
+  detail: string;
+  value?: unknown;
+}
+
+export interface CheckSummary {
+  overall_status: CheckStatus;
+  pass_count: number;
+  warn_count: number;
+  fail_count: number;
+  run_at: string;
+}
+
 export interface ServerListItem {
   id: string;
   name: string;
@@ -41,6 +59,7 @@ export interface ServerListItem {
   last_seen_at: string | null;
   api_key_prefix: string | null;
   latest: LatestSummary | null;
+  latest_check: CheckSummary | null;
 }
 
 export interface ServersResponse {
@@ -79,6 +98,16 @@ export interface ServerDetail {
     meta: Record<string, unknown>;
     reported_at: string;
   } | null;
+  latest_check: {
+    overall_status: CheckStatus;
+    pass_count: number;
+    warn_count: number;
+    fail_count: number;
+    results: CheckResult[];
+    agent_version?: string | null;
+    run_at: string;
+  } | null;
+  check_history: CheckSummary[];
   history: HistoryPoint[];
   stale_after_minutes: number;
 }

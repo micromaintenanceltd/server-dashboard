@@ -42,6 +42,24 @@ CPU %, RAM used/total, disk usage per volume, uptime, watched services (with any
 stopped critical service flagged), Bitdefender GravityZone AV status, Windows patch
 status (last update + pending count), and host metadata (hostname, OS, local IP).
 
+## Weekly checks
+
+Alongside the 5-minute telemetry, the agent runs a weekly audit (default Monday
+07:00 UK, catch-up if the server was off). Each check returns pass / warn / fail:
+Windows Server Backup success, required services running, disk space, pending
+updates, last update installed, antivirus, pending reboot, Windows Firewall, and
+event-log error volume. Results appear on the dashboard per server (list badge
+and a detail panel). Checks are configurable and the required-services list is
+per server. See [agent/INSTALL.md](agent/INSTALL.md).
+
+## Local settings page
+
+While the service runs it serves a settings page on `http://127.0.0.1:8000`
+(loopback only). A technician on the server can adjust what that server reports:
+connection, interval, watched services, the weekly check schedule, which checks
+run and their thresholds. It is not reachable from the network; the central hub
+cannot change any server.
+
 ---
 
 ## Local development
@@ -183,7 +201,8 @@ later without reworking the API.
 
 | Method | Route | Auth | Purpose |
 | ------ | ----- | ---- | ------- |
-| POST   | `/api/report` | Server Bearer key | Agent submits a report |
+| POST   | `/api/report` | Server Bearer key | Agent submits a 5-minute health report |
+| POST   | `/api/checks` | Server Bearer key | Agent submits a weekly check run |
 | POST   | `/api/enroll` | Enroll token | Installer self-registers a server, gets its key |
 | GET    | `/api/servers` | IP allowlist | List servers + latest status |
 | GET    | `/api/servers/:id` | IP allowlist | One server + 7-day history |

@@ -12,6 +12,9 @@
 //   mml-agent.exe once [--send]
 //       Collect one report and print it; with --send also POST it. (Diagnostics.)
 //
+//   mml-agent.exe check [--send]
+//       Run the weekly checks now and print findings; with --send also POST.
+//
 //   mml-agent.exe version | help
 
 const log = require('./logger');
@@ -27,6 +30,7 @@ function usage() {
       '  mml-agent enroll --company "<name>" --api-url <url> --enroll-token <token> [--location "<loc>"] [--interval <min>]',
       '  mml-agent run',
       '  mml-agent once [--send]',
+      '  mml-agent check [--send]',
       '  mml-agent version',
       '',
     ].join('\n')
@@ -49,6 +53,11 @@ async function main() {
     case 'once': {
       const { once } = require('./commands/once');
       await once({ send: rest.includes('--send') });
+      break;
+    }
+    case 'check': {
+      const { check } = require('./commands/check');
+      await check({ send: rest.includes('--send') });
       break;
     }
     case 'version':

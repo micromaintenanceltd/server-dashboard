@@ -61,6 +61,16 @@ function loadConfig() {
   cfg.avServiceNames = Array.isArray(cfg.avServiceNames) ? cfg.avServiceNames : [];
   cfg.watchServices = Array.isArray(cfg.watchServices) ? cfg.watchServices : [];
   cfg.topProcessCount = Number.isInteger(cfg.topProcessCount) ? cfg.topProcessCount : 5;
+
+  // Weekly checks config: default the section and the schedule so older config
+  // files (written before checks existed) still run.
+  cfg.checks = cfg.checks && typeof cfg.checks === 'object' ? cfg.checks : {};
+  cfg.checks.schedule = cfg.checks.schedule || { dayOfWeek: 'monday', hour: 7, minute: 0 };
+
+  // Local settings server defaults.
+  cfg.settings = cfg.settings && typeof cfg.settings === 'object' ? cfg.settings : {};
+  cfg.settings.port = Number(cfg.settings.port) > 0 ? Number(cfg.settings.port) : 8000;
+
   cfg._configPath = configPath;
 
   return cfg;

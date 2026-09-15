@@ -70,8 +70,32 @@ Everything is one file, `mml-agent.exe` (Node is bundled in), with subcommands:
 | Command | Who runs it | What it does |
 | ------- | ----------- | ------------ |
 | `mml-agent.exe enroll --company "X" --api-url <url> --enroll-token <tok>` | the installer | Registers the server, writes `config.json` |
-| `mml-agent.exe run` | the Windows service | The reporting loop |
+| `mml-agent.exe run` | the Windows service | Telemetry loop + weekly checks + local settings page |
 | `mml-agent.exe once [--send]` | you, for diagnostics | Collect one report, print it, optionally send |
+| `mml-agent.exe check [--send]` | you, for diagnostics | Run the weekly checks now, print findings, optionally send |
+
+### Weekly checks
+
+Alongside the 5-minute telemetry, the service runs a weekly audit (default
+Monday 07:00 UK, set in `config.checks.schedule`). It is catch-up style: if the
+server was off at the scheduled time, the run happens the next time the service
+is up. Each check returns pass / warn / fail and the run is sent to the
+dashboard. The default checks are Windows Server Backup success, required
+services running, disk space, pending updates, last update installed, antivirus,
+pending reboot, Windows Firewall, and event-log error volume. Every check can be
+tuned or disabled in config, and the required-services list is per server.
+
+### Local settings page
+
+While the service runs it serves a settings page on `http://127.0.0.1:8000`
+(port configurable via `config.settings.port`). It is bound to loopback only, so
+it is reachable only from someone already on this server (console/RDP); nothing
+on the network or the internet can reach it, and the central hub still cannot
+change the server. The page edits everything this server reports: connection
+(API URL and key), report interval, watched services, the weekly check schedule,
+which checks run, their thresholds, and the required-services list. Saving
+applies changes to the running service within a minute. Write actions are
+CSRF-protected (loopback bind, Host/Origin checks, and a required custom header).
 
 ### Running as a Windows service
 

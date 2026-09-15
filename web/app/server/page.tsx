@@ -8,7 +8,7 @@ import type { ServerDetail } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineChart, type ChartPoint } from '@/components/LineChart';
 import { UsageBar } from '@/components/UsageBar';
-import { formatUkDateTime, relativeAge, formatUptime, formatMb } from '@/lib/format';
+import { formatUkDateTime, relativeAge, formatUptime, formatMb, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
 
@@ -71,7 +71,7 @@ function ServerDetailInner() {
 
   if (!data) return null;
 
-  const { server, latest_report, history } = data;
+  const { server, latest_report, history, latest_check, check_history } = data;
 
   // Build chart series from history.
   const cpuSeries: ChartPoint[] = history.map((h) => ({ t: h.reported_at, v: h.cpu_percent }));
@@ -217,6 +217,13 @@ function ServerDetailInner() {
         </div>
       </section>
 
+      {/* Weekly checks */}
+      <section className="mb-6">
+        <Panel title="Weekly checks">
+          <WeeklyChecks latest={latest_check} history={check_history} />
+        </Panel>
+      </section>
+
       {/* Raw last report */}
       <section className="mb-10">
         <Panel title="Raw last report">
@@ -288,6 +295,80 @@ function ServicesList({ services }: { services: any }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeeklyChecks({
+  latest,
+  history,
+}: {
+  latest: ServerDetail['latest_check'];
+  history: ServerDetail['check_history'];
+}) {
+  if (!latest) {
+    return (
+      <p className="text-sm text-slate-400">
+        No weekly check has run yet. The first run happens at the scheduled time (Monday 07:00 UK by
+        default), or immediately if the server was off at that time.
+      </p>
+    );
+  }
+
+  const meta = CHECK_META[latest.overall_status];
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.badge}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+          Overall: {meta.label}
+        </span>
+        <span className="text-xs text-slate-500">
+          {latest.pass_count} pass, {latest.warn_count} warn, {latest.fail_count} fail
+        </span>
+        <span className="text-xs text-slate-400">
+          Ran {formatUkDateTime(latest.run_at)} ({relativeAge(latest.run_at)})
+        </span>
+      </div>
+
+      <ul className="divide-y divide-slate-100">
+        {latest.results.map((r) => {
+          const m = CHECK_META[r.status];
+          return (
+            <li key={r.id} className="flex items-start gap-3 py-2">
+              <span
+                className={`mt-0.5 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${m.badge}`}
+              >
+                {m.label}
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-800">{r.title}</div>
+                <div className="text-xs text-slate-500">{r.detail}</div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {history.length > 1 && (
+        <div className="mt-4">
+          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+            Recent runs
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {history.map((h, i) => (
+              <span
+                key={i}
+                title={`${formatUkDateTime(h.run_at)} - ${h.fail_count} fail, ${h.warn_count} warn`}
+                className={`h-3 w-3 rounded-sm ${CHECK_META[h.overall_status].dot}`}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>

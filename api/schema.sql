@@ -37,3 +37,22 @@ CREATE TABLE IF NOT EXISTS server_reports (
 -- History queries for a single server ordered by time (trend views).
 CREATE INDEX IF NOT EXISTS idx_reports_server_time
   ON server_reports(server_id, reported_at DESC);
+
+-- Weekly check runs. Separate from the 5-minute telemetry above: each row is
+-- one scheduled audit that produced pass/warn/fail findings.
+CREATE TABLE IF NOT EXISTS check_runs (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_id      TEXT NOT NULL,
+  overall_status TEXT NOT NULL,             -- pass | warn | fail
+  pass_count     INTEGER NOT NULL DEFAULT 0,
+  warn_count     INTEGER NOT NULL DEFAULT 0,
+  fail_count     INTEGER NOT NULL DEFAULT 0,
+  results_json   TEXT NOT NULL,             -- JSON array of {id,title,status,detail,value}
+  agent_version  TEXT,
+  run_at         TEXT NOT NULL,             -- ISO-8601 UTC
+  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+);
+
+-- Latest / historical check runs for a server.
+CREATE INDEX IF NOT EXISTS idx_check_runs_server_time
+  ON check_runs(server_id, run_at DESC);
