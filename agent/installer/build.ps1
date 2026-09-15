@@ -76,13 +76,16 @@ if ($Sign) { Invoke-AtsSign $agentExe }
 
 # --- 3. Compile the installer ----------------------------------------------
 Write-Host "==> Compiling Inno Setup installer..." -ForegroundColor Cyan
-$iscc = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
+$iscc = (Get-Command "iscc.exe" -ErrorAction SilentlyContinue).Source
 if (-not $iscc) {
-  # Common install location.
-  $candidate = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-  if (Test-Path $candidate) { $iscc = $candidate } else {
-    throw "ISCC.exe (Inno Setup 6) not found. Install it or add it to PATH."
-  }
+  # Common install locations (machine scope and winget user scope).
+  $candidates = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+  )
+  $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if (-not $iscc) { throw "ISCC.exe (Inno Setup 6) not found. Install it or add it to PATH." }
 }
 
 & $iscc `
