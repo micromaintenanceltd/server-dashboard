@@ -50,9 +50,9 @@ async function ensureSchema(db: D1Database): Promise<void> {
         `ALTER TABLE servers ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'active'`
       );
     }
-    // Users table for the built-in login system. exec() needs one statement per
-    // call, so collapse the DDL to a single line.
-    await db.exec(USERS_SCHEMA.replace(/\s+/g, ' ').trim());
+    // Users table for the built-in login system. Use prepare().run() (one
+    // statement, no trailing semicolon) - remote D1's exec() is unreliable here.
+    await db.prepare(USERS_SCHEMA.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim()).run();
     schemaEnsured = true;
   } catch {
     // Leave unensured so a later request retries (e.g. table not created yet).
