@@ -37,7 +37,14 @@ export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 // --- password hashing (PBKDF2-HMAC-SHA256) ---
 
-const PBKDF2_ITERATIONS = 210000; // OWASP-recommended floor for PBKDF2-SHA256
+// Cloudflare Workers on the free plan cap CPU at ~10ms per request, and PBKDF2
+// is deliberately CPU-heavy, so we cannot use the OWASP 210k+ figure here or the
+// request is killed. 20k salted iterations fits the budget and, combined with
+// login lockout and MFA, is a reasonable trade-off for this internal tool. Raise
+// it (e.g. 100k+) if the Worker is moved to a paid plan with more CPU.
+// verifyPassword reads the count from each stored hash, so changing this does
+// not break existing accounts.
+const PBKDF2_ITERATIONS = 20000;
 
 async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, [
