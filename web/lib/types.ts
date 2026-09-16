@@ -3,6 +3,25 @@
 export type ServerStatus = 'online' | 'stale' | 'offline' | 'pending';
 export type DesiredState = 'active' | 'decommission';
 
+export type UserRole = 'admin' | 'tech';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  mfa_enabled: boolean;
+}
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  mfa_enabled: boolean;
+  disabled: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
 export interface DiskVolume {
   mount: string;
   used_gb: number;

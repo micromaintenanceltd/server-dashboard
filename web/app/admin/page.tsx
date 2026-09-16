@@ -7,28 +7,18 @@ import {
   deleteServer,
   decommissionServer,
   rotateKey,
-  getAdminToken,
-  setAdminToken,
 } from '@/lib/api';
 import type { ServerListItem } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { relativeAge } from '@/lib/format';
 
 export default function AdminPage() {
-  const [token, setToken] = useState('');
-  const [tokenSaved, setTokenSaved] = useState(false);
   const [servers, setServers] = useState<ServerListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // The most recently issued raw key (shown once, never retrievable again).
   const [issued, setIssued] = useState<{ name: string; key: string } | null>(null);
-
-  useEffect(() => {
-    const t = getAdminToken();
-    setToken(t);
-    setTokenSaved(Boolean(t));
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -46,15 +36,10 @@ export default function AdminPage() {
     load();
   }, [load]);
 
-  function saveToken() {
-    setAdminToken(token.trim());
-    setTokenSaved(Boolean(token.trim()));
-  }
-
   return (
     <div className="px-8 py-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Servers admin</h1>
         <p className="text-sm text-slate-500">Provision servers and manage their API keys.</p>
       </header>
 
@@ -63,31 +48,6 @@ export default function AdminPage() {
           {error}
         </div>
       )}
-
-      {/* Admin token */}
-      <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-1 text-sm font-semibold text-slate-700">Admin token</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          Required for creating, deleting, and rotating keys. Stored in this browser only. This is
-          the ADMIN_TOKEN secret set on the Worker.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Paste admin token"
-            className="w-80 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-          />
-          <button
-            onClick={saveToken}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
-          >
-            Save
-          </button>
-          {tokenSaved && <span className="text-xs text-status-online">Saved in this browser</span>}
-        </div>
-      </section>
 
       {/* Newly issued key callout */}
       {issued && (
