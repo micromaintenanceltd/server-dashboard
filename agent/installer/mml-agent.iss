@@ -73,9 +73,11 @@ Filename: "{app}\mml-agent-service.exe"; Parameters: "start"; \
   Flags: runhidden waituntilterminated
 
 [UninstallRun]
-; Stop and remove the service before files are deleted.
-Filename: "{app}\mml-agent-service.exe"; Parameters: "stop";      Flags: runhidden waituntilterminated; RunOnceId: "StopMmlAgent"
-Filename: "{app}\mml-agent-service.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveMmlAgent"
+; First deregister from the dashboard (removes this server's record), then stop
+; and remove the service before files are deleted.
+Filename: "{app}\mml-agent.exe";         Parameters: "deregister"; Flags: runhidden waituntilterminated; RunOnceId: "DeregisterMmlAgent"
+Filename: "{app}\mml-agent-service.exe"; Parameters: "stop";       Flags: runhidden waituntilterminated; RunOnceId: "StopMmlAgent"
+Filename: "{app}\mml-agent-service.exe"; Parameters: "uninstall";  Flags: runhidden waituntilterminated; RunOnceId: "RemoveMmlAgent"
 
 [UninstallDelete]
 ; Remove generated files the installer did not lay down.

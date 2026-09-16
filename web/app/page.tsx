@@ -105,7 +105,13 @@ function ServerCard({ server }: { server: ServerListItem }) {
             {server.location ? ` · ${server.location}` : ''}
           </div>
         </div>
-        <StatusBadge status={server.status} />
+        {server.desired_state === 'decommission' ? (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+            Decommissioning
+          </span>
+        ) : (
+          <StatusBadge status={server.status} />
+        )}
       </div>
 
       <div className="mt-4 space-y-3">

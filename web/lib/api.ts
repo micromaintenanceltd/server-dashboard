@@ -81,9 +81,21 @@ export async function createServer(input: {
   return handle<CreatedServer>(res);
 }
 
+// Force-remove immediately (record gone now; agent, if present, goes dormant).
 export async function deleteServer(id: string): Promise<{ ok: boolean; deleted: string }> {
   const res = await fetch(`${API_BASE}/api/servers/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    headers: adminHeaders(),
+  });
+  return handle(res);
+}
+
+// Graceful: mark for decommission so the agent self-uninstalls on next check-in.
+export async function decommissionServer(
+  id: string
+): Promise<{ ok: boolean; server_id: string; note: string }> {
+  const res = await fetch(`${API_BASE}/api/servers/${encodeURIComponent(id)}/decommission`, {
+    method: 'POST',
     headers: adminHeaders(),
   });
   return handle(res);

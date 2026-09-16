@@ -1,6 +1,7 @@
 // Shapes returned by the Worker API. Kept loose where the payload is JSON blobs.
 
 export type ServerStatus = 'online' | 'stale' | 'offline' | 'pending';
+export type DesiredState = 'active' | 'decommission';
 
 export interface DiskVolume {
   mount: string;
@@ -56,6 +57,7 @@ export interface ServerListItem {
   client_name: string;
   location: string | null;
   status: ServerStatus;
+  desired_state: DesiredState;
   last_seen_at: string | null;
   api_key_prefix: string | null;
   latest: LatestSummary | null;
@@ -82,6 +84,7 @@ export interface ServerDetail {
     client_name: string;
     location: string | null;
     status: ServerStatus;
+    desired_state: DesiredState;
     last_seen_at: string | null;
     created_at: string;
     api_key_prefix: string | null;

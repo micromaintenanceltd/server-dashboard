@@ -12,16 +12,21 @@ const { runAllChecks } = require('../checks');
 const { isCheckDue } = require('../lib/schedule');
 const { readState, writeState } = require('../lib/state');
 const { startSettingsServer } = require('../settings/server');
+const { triggerSelfUninstall } = require('../lib/selfUninstall');
 const log = require('../logger');
 
 // How often the service re-evaluates whether the weekly check slot is due.
 const CHECK_POLL_MS = 5 * 60_000;
 
+// Set once the dashboard has asked this server to decommission, so we stop the
+// loops and only self-uninstall once.
+let decommissioning = false;
+
 async function runOnceCycle(cfg) {
   const started = Date.now();
   try {
     const report = await collectReport(cfg);
-    await postReport(cfg, report);
+    const res = await postReport(cfg, report);
     const ms = Date.now() - started;
     const stopped = report.services.stopped_critical || [];
     log.info(
@@ -30,6 +35,18 @@ async function runOnceCycle(cfg) {
         `disks=${report.disk.length} ` +
         `criticalStopped=${stopped.length ? stopped.join(',') : 'none'}`
     );
+
+    // The dashboard can ask this server to decommission. This is the only field
+    // of the response the agent acts on, and the only action is self-uninstall.
+    if (res && res.decommission && !decommissioning) {
+      decommissioning = true;
+      log.warn('Dashboard marked this server for decommission. Self-uninstalling.');
+      try {
+        await triggerSelfUninstall(cfg);
+      } catch (err) {
+        log.error('Self-uninstall failed:', err.message);
+      }
+    }
   } catch (err) {
     log.error('Report failed:', err.message);
   }
@@ -90,13 +107,13 @@ function run() {
   // 1. Live telemetry loop.
   runOnceCycle(live);
   let telemetryTimer = setInterval(() => {
-    if (running) runOnceCycle(live);
+    if (running && !decommissioning) runOnceCycle(live);
   }, currentInterval * 60_000);
 
   // 2. Weekly check scheduler loop.
   setTimeout(() => maybeRunChecks(live), 15_000);
   const checkTimer = setInterval(() => {
-    if (running) maybeRunChecks(live);
+    if (running && !decommissioning) maybeRunChecks(live);
   }, CHECK_POLL_MS);
 
   // Apply a new config from the settings page: validate, persist, swap into the
@@ -127,7 +144,7 @@ function run() {
       currentInterval = live.intervalMinutes;
       clearInterval(telemetryTimer);
       telemetryTimer = setInterval(() => {
-        if (running) runOnceCycle(live);
+        if (running && !decommissioning) runOnceCycle(live);
       }, currentInterval * 60_000);
       log.info(`Report interval changed to ${currentInterval} min.`);
     }

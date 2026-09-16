@@ -48,8 +48,24 @@ async function postCheckRun(cfg, results) {
   });
 }
 
-// Shared POST helper. Outbound only; the response is used solely to detect
-// failure, never acted on. See INSTALL.md on the one-directional design.
+// Deregister this server from the dashboard (removes its own record). Called by
+// the uninstaller. Best-effort: never throws, so it cannot block an uninstall.
+async function deregister(cfg) {
+  const url = cfg.apiUrl.replace(/\/+$/, '') + '/api/self';
+  try {
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// Shared POST helper. Outbound only. The parsed response body is returned so the
+// caller can read the `decommission` flag (the one bounded action the API can
+// signal); nothing else in the body is ever acted on. See INSTALL.md.
 async function postJson(cfg, path, body) {
   const url = cfg.apiUrl.replace(/\/+$/, '') + path;
   const res = await fetch(url, {
@@ -65,7 +81,11 @@ async function postJson(cfg, path, body) {
   if (!res.ok) {
     throw new Error(`API responded ${res.status}: ${text}`);
   }
-  return text;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
 }
 
-module.exports = { collectReport, postReport, postCheckRun, AGENT_VERSION };
+module.exports = { collectReport, postReport, postCheckRun, deregister, AGENT_VERSION };

@@ -5,6 +5,7 @@ import {
   fetchServers,
   createServer,
   deleteServer,
+  decommissionServer,
   rotateKey,
   getAdminToken,
   setAdminToken,
@@ -230,18 +231,45 @@ function ServerRow({
     }
   }
 
-  async function doDelete() {
-    if (!confirm(`Delete ${server.name}? This removes the server and all its report history.`)) return;
+  async function doDecommission() {
+    if (
+      !confirm(
+        `Decommission ${server.name}? The agent will uninstall itself on its next check-in ` +
+          `(within a few minutes), then the record is removed.`
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await decommissionServer(server.id);
+      onDeleted();
+    } catch (err: any) {
+      onError(err.message || 'Failed to decommission server');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doForceRemove() {
+    if (
+      !confirm(
+        `Force-remove ${server.name} now? This deletes the record and all history immediately. ` +
+          `Use this only if the server is already gone; any agent still installed will not be uninstalled.`
+      )
+    )
+      return;
     setBusy(true);
     try {
       await deleteServer(server.id);
       onDeleted();
     } catch (err: any) {
-      onError(err.message || 'Failed to delete server');
+      onError(err.message || 'Failed to remove server');
     } finally {
       setBusy(false);
     }
   }
+
+  const decommissioning = server.desired_state === 'decommission';
 
   return (
     <tr className="border-b border-slate-50 last:border-0">
@@ -251,7 +279,13 @@ function ServerRow({
         {server.location ? <span className="text-slate-400"> · {server.location}</span> : null}
       </td>
       <td className="px-4 py-2">
-        <StatusBadge status={server.status} />
+        {decommissioning ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+            Decommissioning
+          </span>
+        ) : (
+          <StatusBadge status={server.status} />
+        )}
       </td>
       <td className="px-4 py-2 font-mono text-xs text-slate-500">
         {server.api_key_prefix ? `${server.api_key_prefix}...` : 'n/a'}
@@ -267,11 +301,20 @@ function ServerRow({
             Rotate key
           </button>
           <button
-            onClick={doDelete}
+            onClick={doDecommission}
+            disabled={busy || decommissioning}
+            title="Tell the agent to uninstall itself, then remove the record"
+            className="rounded-md border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+          >
+            {decommissioning ? 'Pending...' : 'Decommission'}
+          </button>
+          <button
+            onClick={doForceRemove}
             disabled={busy}
+            title="Remove the record immediately without uninstalling the agent"
             className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-status-offline hover:bg-red-50 disabled:opacity-50"
           >
-            Delete
+            Force remove
           </button>
         </div>
       </td>

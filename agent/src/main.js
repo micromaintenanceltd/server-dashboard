@@ -31,6 +31,7 @@ function usage() {
       '  mml-agent run',
       '  mml-agent once [--send]',
       '  mml-agent check [--send]',
+      '  mml-agent deregister',
       '  mml-agent version',
       '',
     ].join('\n')
@@ -58,6 +59,18 @@ async function main() {
     case 'check': {
       const { check } = require('./commands/check');
       await check({ send: rest.includes('--send') });
+      break;
+    }
+    case 'deregister': {
+      const { deregisterCmd } = require('./commands/deregister');
+      await deregisterCmd();
+      break;
+    }
+    case 'self-uninstall': {
+      // Manual trigger for testing the decommission path.
+      const { loadConfig } = require('./config');
+      const { triggerSelfUninstall } = require('./lib/selfUninstall');
+      await triggerSelfUninstall(loadConfig());
       break;
     }
     case 'version':

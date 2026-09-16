@@ -24,6 +24,32 @@ const app = new Hono<{ Bindings: Env }>();
 // origin list here if you prefer.
 app.use('/api/*', cors({ origin: '*', allowHeaders: ['Content-Type', 'Authorization'] }));
 
+// --- Lightweight self-migration -------------------------------------------
+// This Worker deploys via Git, which does not run D1 migrations. To keep schema
+// additions safe regardless of deploy order, add any missing columns on the
+// first request per isolate. It is a no-op once the column exists.
+let schemaEnsured = false;
+async function ensureSchema(db: D1Database): Promise<void> {
+  if (schemaEnsured) return;
+  try {
+    const col = await db
+      .prepare(`SELECT 1 AS ok FROM pragma_table_info('servers') WHERE name = 'desired_state'`)
+      .first();
+    if (!col) {
+      await db.exec(
+        `ALTER TABLE servers ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'active'`
+      );
+    }
+    schemaEnsured = true;
+  } catch {
+    // Leave unensured so a later request retries (e.g. table not created yet).
+  }
+}
+app.use('/api/*', async (c, next) => {
+  await ensureSchema(c.env.DB);
+  await next();
+});
+
 // --- Helpers --------------------------------------------------------------
 
 function staleMinutes(env: Env): number {
@@ -137,7 +163,33 @@ app.post('/api/report', async (c) => {
     }),
   });
 
-  return c.json({ ok: true, received_at: reportedAt });
+  // If an admin has marked this server for decommission, tell the agent so it
+  // can self-uninstall on this outbound check-in. This is the ONE case where the
+  // API's response causes the agent to act, and it is bounded to self-uninstall
+  // (never arbitrary commands). See INSTALL.md on the one-directional design.
+  const decommission = server.desired_state === 'decommission';
+
+  return c.json({ ok: true, received_at: reportedAt, decommission });
+});
+
+// --- DELETE /api/self : agent deregisters its own record ------------------
+// Authenticated by the per-server key. Called by the uninstaller (manual or
+// decommission) so a removed agent disappears from the dashboard. IP-allowlist
+// exempt, like report/enroll, because it comes from the client site.
+app.delete('/api/self', async (c) => {
+  const auth = c.req.header('Authorization') || '';
+  const rawKey = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!rawKey) return c.json({ error: 'Missing Bearer API key.' }, 401);
+
+  const hash = await hashApiKey(rawKey);
+  const server = await c.env.DB.prepare(`SELECT id FROM servers WHERE api_key_hash = ?1`)
+    .bind(hash)
+    .first<{ id: string }>();
+  // Idempotent: if the record is already gone, report success.
+  if (!server) return c.json({ ok: true, already_removed: true });
+
+  await c.env.DB.prepare(`DELETE FROM servers WHERE id = ?1`).bind(server.id).run();
+  return c.json({ ok: true, deregistered: server.id });
 });
 
 // --- POST /api/enroll : installer self-registers a new server -------------
@@ -297,7 +349,7 @@ app.get('/api/servers', async (c) => {
   // Roster plus the latest report snapshot and the latest weekly check summary
   // (single query, LEFT JOINs onto the most recent report/check per server).
   const { results } = await c.env.DB.prepare(
-    `SELECT s.id, s.name, s.client_name, s.location, s.current_status,
+    `SELECT s.id, s.name, s.client_name, s.location, s.current_status, s.desired_state,
             s.created_at, s.last_seen_at, s.api_key_prefix,
             r.cpu_percent, r.ram_used_mb, r.ram_total_mb, r.disk_json,
             r.uptime_seconds, r.services_json, r.reported_at,
@@ -320,6 +372,7 @@ app.get('/api/servers', async (c) => {
     client_name: row.client_name,
     location: row.location,
     status: computeStatus(row.last_seen_at, staleAfter, now),
+    desired_state: row.desired_state,
     last_seen_at: row.last_seen_at,
     api_key_prefix: row.api_key_prefix,
     latest: row.reported_at
@@ -357,7 +410,7 @@ app.get('/api/servers/:id', async (c) => {
   const now = Date.now();
 
   const server = await c.env.DB.prepare(
-    `SELECT id, name, client_name, location, current_status,
+    `SELECT id, name, client_name, location, current_status, desired_state,
             created_at, last_seen_at, api_key_prefix
      FROM servers WHERE id = ?1`
   )
@@ -408,6 +461,7 @@ app.get('/api/servers/:id', async (c) => {
       client_name: server.client_name,
       location: server.location,
       status: computeStatus(server.last_seen_at, staleAfter, now),
+      desired_state: server.desired_state,
       last_seen_at: server.last_seen_at,
       created_at: server.created_at,
       api_key_prefix: server.api_key_prefix,
@@ -497,7 +551,11 @@ app.post('/api/servers', async (c) => {
   );
 });
 
-// --- DELETE /api/servers/:id : admin removes a server ---------------------
+// --- DELETE /api/servers/:id : admin force-removes a server immediately ---
+// Removes the record now, regardless of the agent. Use for servers that are
+// already gone/offline. The agent (if still installed) will get 401s and go
+// dormant. For a graceful removal that also uninstalls the agent, use
+// /decommission below.
 app.delete('/api/servers/:id', async (c) => {
   const block = requireAdmin(c);
   if (block) return block;
@@ -511,6 +569,31 @@ app.delete('/api/servers/:id', async (c) => {
   // ON DELETE CASCADE removes the report history too.
   await c.env.DB.prepare(`DELETE FROM servers WHERE id = ?1`).bind(id).run();
   return c.json({ ok: true, deleted: id });
+});
+
+// --- POST /api/servers/:id/decommission : admin asks the agent to uninstall -
+// Marks the server for decommission. On its next report the agent sees the flag
+// and self-uninstalls, which deregisters and removes the record. The record
+// stays visible (as "decommissioning") until the agent checks in and completes;
+// force-remove it with DELETE above if the agent never comes back.
+app.post('/api/servers/:id/decommission', async (c) => {
+  const block = requireAdmin(c);
+  if (block) return block;
+
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare(`SELECT id FROM servers WHERE id = ?1`)
+    .bind(id)
+    .first();
+  if (!existing) return c.json({ error: 'Server not found.' }, 404);
+
+  await c.env.DB.prepare(`UPDATE servers SET desired_state = 'decommission' WHERE id = ?1`)
+    .bind(id)
+    .run();
+  return c.json({
+    ok: true,
+    server_id: id,
+    note: 'Marked for decommission. The agent will uninstall on its next check-in.',
+  });
 });
 
 // --- POST /api/servers/:id/rotate-key : admin revokes + reissues a key ----

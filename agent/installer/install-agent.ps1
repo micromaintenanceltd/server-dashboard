@@ -41,6 +41,12 @@ function Assert-Admin {
 # --- Uninstall path ---------------------------------------------------------
 if ($Uninstall) {
   Assert-Admin
+  # Deregister from the dashboard first (removes this server's record).
+  $agentExe = Join-Path $InstallDir "mml-agent.exe"
+  if (Test-Path $agentExe) {
+    Write-Host "Deregistering from the dashboard..."
+    & $agentExe deregister 2>$null
+  }
   if (Test-Path $svcExe) {
     Write-Host "Stopping and removing service..."
     & $svcExe stop 2>$null

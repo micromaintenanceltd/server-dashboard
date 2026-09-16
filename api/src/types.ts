@@ -28,11 +28,13 @@ export interface ServerRow {
   api_key_hash: string;
   api_key_prefix: string | null;
   current_status: ServerStatus;
+  desired_state: DesiredState;
   created_at: string;
   last_seen_at: string | null;
 }
 
 export type ServerStatus = 'online' | 'stale' | 'offline' | 'pending';
+export type DesiredState = 'active' | 'decommission';
 
 // The payload an agent POSTs to /api/report.
 export interface ReportPayload {

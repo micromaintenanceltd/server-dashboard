@@ -10,9 +10,13 @@ CREATE TABLE IF NOT EXISTS servers (
   api_key_hash  TEXT NOT NULL,             -- SHA-256 hex of the raw key; raw key is shown once at creation
   api_key_prefix TEXT,                     -- first few chars of the raw key, for display/identification only
   current_status TEXT NOT NULL DEFAULT 'pending', -- online | stale | offline | pending
+  desired_state TEXT NOT NULL DEFAULT 'active',   -- active | decommission (admin asked the agent to self-uninstall)
   created_at    TEXT NOT NULL,             -- ISO-8601 UTC
   last_seen_at  TEXT                       -- ISO-8601 UTC of last accepted report
 );
+
+-- For existing databases, add the column with:
+--   ALTER TABLE servers ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'active';
 
 -- Fast lookup of a server by its key hash during report auth.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_servers_api_key_hash ON servers(api_key_hash);
