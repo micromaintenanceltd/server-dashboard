@@ -11,12 +11,17 @@ export interface Env {
   DASHBOARD_IP_ALLOWLIST: string;
   // Minutes without a report before a server is considered stale/offline.
   STALE_AFTER_MINUTES: string;
-  // Secret bearer token required for admin routes (create/delete/rotate).
-  ADMIN_TOKEN: string;
   // Secret bearer token that the installer uses to self-enrol a new server.
-  // Separate from ADMIN_TOKEN: it can only create a server record and receive
-  // that server's reporting key. It cannot read data or manage servers.
+  // It can only create a server record and receive that server's reporting key.
+  // It cannot read data or manage servers.
   ENROLL_TOKEN: string;
+
+  // --- Built-in login (dashboard users) ---
+  // Secret used to sign session/MFA tokens (HS256). Keep it long and random.
+  AUTH_SECRET: string;
+  // One-time secret that authorises creating the very first admin account via
+  // POST /api/auth/setup (only works while there are no users yet).
+  BOOTSTRAP_TOKEN: string;
 }
 
 // A server row as stored in D1.

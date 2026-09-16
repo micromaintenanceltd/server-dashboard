@@ -11,7 +11,17 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, ReportPayload, ServerRow, ServerStatus, CheckRunPayload } from './types';
 import { generateApiKey, hashApiKey, keyPrefix } from './crypto';
-import { isIpAllowed } from './ipAllowlist';
+import { hashPassword, verifyPassword, signJwt, verifyJwt } from './auth/crypto';
+import { generateTotpSecret, otpauthUri, verifyTotp } from './auth/totp';
+import {
+  USERS_SCHEMA,
+  getUserByEmail,
+  getUserById,
+  getAuthUser,
+  countUsers,
+  type UserRow,
+  type UserRole,
+} from './auth/users';
 
 // Re-export the Durable Object classes so the runtime can find them.
 export { ServerState } from './durable/serverState';
@@ -40,6 +50,9 @@ async function ensureSchema(db: D1Database): Promise<void> {
         `ALTER TABLE servers ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'active'`
       );
     }
+    // Users table for the built-in login system. exec() needs one statement per
+    // call, so collapse the DDL to a single line.
+    await db.exec(USERS_SCHEMA.replace(/\s+/g, ' ').trim());
     schemaEnsured = true;
   } catch {
     // Leave unensured so a later request retries (e.g. table not created yet).
@@ -70,31 +83,423 @@ function computeStatus(lastSeenAt: string | null, staleAfter: number, nowMs: num
   return 'offline';
 }
 
-// Guard for the technician (read) routes: IP allowlist only.
-function requireAllowedIp(c: any): Response | null {
-  if (!isIpAllowed(c.req.raw, c.env.DASHBOARD_IP_ALLOWLIST)) {
-    return c.json({ error: 'Forbidden: your IP is not on the dashboard allowlist.' }, 403);
-  }
-  return null;
+// Guard for technician (read) routes: any signed-in dashboard user.
+// Returns the user, or a Response to return on failure.
+async function requireUser(c: any): Promise<UserRow | Response> {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  return user;
 }
 
-// Guard for admin (write) routes: IP allowlist + admin bearer token.
-function requireAdmin(c: any): Response | null {
-  const ipBlock = requireAllowedIp(c);
-  if (ipBlock) return ipBlock;
-
-  const auth = c.req.header('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!c.env.ADMIN_TOKEN || token !== c.env.ADMIN_TOKEN) {
-    return c.json({ error: 'Unauthorized: admin token required.' }, 401);
-  }
-  return null;
+// Guard for admin (write) routes: a signed-in user with the admin role.
+async function requireAdmin(c: any): Promise<UserRow | Response> {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  if (user.role !== 'admin') return c.json({ error: 'Admin access required.' }, 403);
+  return user;
 }
 
 // --- Health ---------------------------------------------------------------
 
 app.get('/', (c) => c.text('MML Server Dashboard API'));
 app.get('/api/health', (c) => c.json({ ok: true, service: 'mml-dashboard-api' }));
+
+// ==========================================================================
+// Authentication (built-in login: password + optional TOTP MFA, roles)
+// ==========================================================================
+
+const SESSION_TTL = 12 * 3600; // 12 hours
+const PREAUTH_TTL = 5 * 60; // 5 minutes to complete MFA
+const MAX_FAILED = 5;
+const LOCKOUT_MINUTES = 15;
+
+function sessionPayload(u: UserRow) {
+  return { kind: 'session', sub: u.id, role: u.role, tv: u.token_version };
+}
+function publicUser(u: UserRow) {
+  return { id: u.id, email: u.email, role: u.role, mfa_enabled: !!u.mfa_enabled };
+}
+function isValidEmail(e: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+}
+function passwordProblem(p: string): string | null {
+  if (!p || p.length < 10) return 'Password must be at least 10 characters.';
+  return null;
+}
+function genRecoveryCodes(n = 10): string[] {
+  const codes: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const b = crypto.getRandomValues(new Uint8Array(5));
+    let hex = '';
+    for (const x of b) hex += x.toString(16).padStart(2, '0');
+    codes.push(`${hex.slice(0, 5)}-${hex.slice(5, 10)}`);
+  }
+  return codes;
+}
+async function markLogin(db: D1Database, id: string) {
+  await db
+    .prepare(`UPDATE users SET last_login_at = ?1 WHERE id = ?2`)
+    .bind(new Date().toISOString(), id)
+    .run();
+}
+async function countActiveAdmins(db: D1Database): Promise<number> {
+  const r = await db
+    .prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0`)
+    .first<{ n: number }>();
+  return r?.n ?? 0;
+}
+
+// --- POST /api/auth/setup : create the first admin (bootstrap) ------------
+app.post('/api/auth/setup', async (c) => {
+  if ((await countUsers(c.env.DB)) > 0) {
+    return c.json({ error: 'Setup already completed.' }, 409);
+  }
+  const token = (c.req.header('Authorization') || '').replace(/^Bearer /, '');
+  if (!c.env.BOOTSTRAP_TOKEN || token !== c.env.BOOTSTRAP_TOKEN) {
+    return c.json({ error: 'Invalid bootstrap token.' }, 401);
+  }
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!isValidEmail(email)) return c.json({ error: 'A valid email is required.' }, 400);
+  const pw = passwordProblem(password);
+  if (pw) return c.json({ error: pw }, 400);
+
+  const id = crypto.randomUUID();
+  const hash = await hashPassword(password);
+  await c.env.DB.prepare(
+    `INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?1,?2,?3,'admin',?4)`
+  )
+    .bind(id, email, hash, new Date().toISOString())
+    .run();
+  return c.json({ ok: true, user: { id, email, role: 'admin' } }, 201);
+});
+
+// --- POST /api/auth/login : password step ---------------------------------
+app.post('/api/auth/login', async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const invalid = () => c.json({ error: 'Invalid email or password.' }, 401);
+
+  const user = await getUserByEmail(c.env.DB, email);
+  if (!user || user.disabled) {
+    await hashPassword(password); // equalise timing vs a real verify
+    return invalid();
+  }
+  if (user.lockout_until && Date.parse(user.lockout_until) > Date.now()) {
+    return c.json(
+      { error: 'Account temporarily locked after too many attempts. Try again shortly.' },
+      429
+    );
+  }
+
+  const ok = await verifyPassword(password, user.password_hash);
+  if (!ok) {
+    const attempts = user.failed_attempts + 1;
+    const locked = attempts >= MAX_FAILED;
+    await c.env.DB.prepare(`UPDATE users SET failed_attempts = ?1, lockout_until = ?2 WHERE id = ?3`)
+      .bind(
+        locked ? 0 : attempts,
+        locked ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000).toISOString() : null,
+        user.id
+      )
+      .run();
+    return invalid();
+  }
+
+  // Password correct: clear failure counters.
+  await c.env.DB.prepare(`UPDATE users SET failed_attempts = 0, lockout_until = NULL WHERE id = ?1`)
+    .bind(user.id)
+    .run();
+
+  if (user.mfa_enabled) {
+    const mfaToken = await signJwt(
+      { kind: 'preauth', sub: user.id, tv: user.token_version },
+      c.env.AUTH_SECRET,
+      PREAUTH_TTL
+    );
+    return c.json({ mfa_required: true, mfa_token: mfaToken });
+  }
+
+  await markLogin(c.env.DB, user.id);
+  const token = await signJwt(sessionPayload(user), c.env.AUTH_SECRET, SESSION_TTL);
+  return c.json({ token, user: publicUser(user) });
+});
+
+// --- POST /api/auth/mfa/verify : TOTP or recovery code --------------------
+app.post('/api/auth/mfa/verify', async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const payload = await verifyJwt(String(body.mfa_token || ''), c.env.AUTH_SECRET);
+  if (!payload || payload.kind !== 'preauth' || !payload.sub) {
+    return c.json({ error: 'MFA session expired. Please log in again.' }, 401);
+  }
+  const user = await getUserById(c.env.DB, String(payload.sub));
+  if (!user || user.disabled || !user.mfa_enabled || !user.mfa_secret) {
+    return c.json({ error: 'MFA is not available for this account.' }, 400);
+  }
+  if (Number(payload.tv) !== user.token_version) {
+    return c.json({ error: 'Session no longer valid. Log in again.' }, 401);
+  }
+
+  const code = String(body.code || '').trim();
+  let ok = await verifyTotp(user.mfa_secret, code);
+  let usedRecovery = false;
+  if (!ok && user.recovery_codes) {
+    const hashes: string[] = safeParse(user.recovery_codes, []);
+    const codeHash = await hashApiKey(code.replace(/\s/g, '').toLowerCase());
+    const idx = hashes.indexOf(codeHash);
+    if (idx >= 0) {
+      ok = true;
+      usedRecovery = true;
+      hashes.splice(idx, 1);
+      await c.env.DB.prepare(`UPDATE users SET recovery_codes = ?1 WHERE id = ?2`)
+        .bind(JSON.stringify(hashes), user.id)
+        .run();
+    }
+  }
+  if (!ok) return c.json({ error: 'Invalid code.' }, 401);
+
+  await markLogin(c.env.DB, user.id);
+  const token = await signJwt(sessionPayload(user), c.env.AUTH_SECRET, SESSION_TTL);
+  return c.json({ token, user: publicUser(user), used_recovery_code: usedRecovery });
+});
+
+// --- GET /api/me ----------------------------------------------------------
+app.get('/api/me', async (c) => {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  return c.json({ user: publicUser(user) });
+});
+
+// --- POST /api/auth/password : change own password ------------------------
+app.post('/api/auth/password', async (c) => {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  if (!(await verifyPassword(String(body.current_password || ''), user.password_hash))) {
+    return c.json({ error: 'Current password is incorrect.' }, 400);
+  }
+  const next = String(body.new_password || '');
+  const pw = passwordProblem(next);
+  if (pw) return c.json({ error: pw }, 400);
+
+  const hash = await hashPassword(next);
+  const newTv = user.token_version + 1;
+  await c.env.DB.prepare(`UPDATE users SET password_hash = ?1, token_version = ?2 WHERE id = ?3`)
+    .bind(hash, newTv, user.id)
+    .run();
+  // Keep this browser signed in with a fresh token (older sessions revoked).
+  const token = await signJwt(
+    { kind: 'session', sub: user.id, role: user.role, tv: newTv },
+    c.env.AUTH_SECRET,
+    SESSION_TTL
+  );
+  return c.json({ ok: true, token });
+});
+
+// --- MFA setup / enable / disable -----------------------------------------
+app.post('/api/auth/mfa/setup', async (c) => {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  const secret = generateTotpSecret();
+  // Store the pending secret but do not enable until a code is confirmed.
+  await c.env.DB.prepare(`UPDATE users SET mfa_secret = ?1, mfa_enabled = 0 WHERE id = ?2`)
+    .bind(secret, user.id)
+    .run();
+  return c.json({ secret, otpauth_uri: otpauthUri(secret, user.email) });
+});
+
+app.post('/api/auth/mfa/enable', async (c) => {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  if (!user.mfa_secret) return c.json({ error: 'Start MFA setup first.' }, 400);
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  if (!(await verifyTotp(user.mfa_secret, String(body.code || '').trim()))) {
+    return c.json({ error: 'That code did not match. Check your authenticator and try again.' }, 400);
+  }
+  const codes = genRecoveryCodes();
+  const hashed = await Promise.all(codes.map((x) => hashApiKey(x)));
+  await c.env.DB.prepare(`UPDATE users SET mfa_enabled = 1, recovery_codes = ?1 WHERE id = ?2`)
+    .bind(JSON.stringify(hashed), user.id)
+    .run();
+  return c.json({ ok: true, recovery_codes: codes });
+});
+
+app.post('/api/auth/mfa/disable', async (c) => {
+  const user = await getAuthUser(c.req.raw, c.env);
+  if (!user) return c.json({ error: 'Not signed in.' }, 401);
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  if (!(await verifyPassword(String(body.password || ''), user.password_hash))) {
+    return c.json({ error: 'Password is incorrect.' }, 400);
+  }
+  await c.env.DB.prepare(
+    `UPDATE users SET mfa_enabled = 0, mfa_secret = NULL, recovery_codes = NULL WHERE id = ?1`
+  )
+    .bind(user.id)
+    .run();
+  return c.json({ ok: true });
+});
+
+// --- Admin: user management -----------------------------------------------
+app.get('/api/users', async (c) => {
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, email, role, mfa_enabled, disabled, created_at, last_login_at
+     FROM users ORDER BY email`
+  ).all();
+  return c.json({
+    users: (results as any[]).map((u) => ({
+      id: u.id,
+      email: u.email,
+      role: u.role,
+      mfa_enabled: !!u.mfa_enabled,
+      disabled: !!u.disabled,
+      created_at: u.created_at,
+      last_login_at: u.last_login_at,
+    })),
+  });
+});
+
+app.post('/api/users', async (c) => {
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  const role: UserRole = body.role === 'admin' ? 'admin' : 'tech';
+  const password = String(body.password || '');
+  if (!isValidEmail(email)) return c.json({ error: 'A valid email is required.' }, 400);
+  const pw = passwordProblem(password);
+  if (pw) return c.json({ error: pw }, 400);
+  if (await getUserByEmail(c.env.DB, email)) {
+    return c.json({ error: 'A user with that email already exists.' }, 409);
+  }
+  const id = crypto.randomUUID();
+  const hash = await hashPassword(password);
+  await c.env.DB.prepare(
+    `INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?1,?2,?3,?4,?5)`
+  )
+    .bind(id, email, hash, role, new Date().toISOString())
+    .run();
+  return c.json({ ok: true, user: { id, email, role } }, 201);
+});
+
+app.post('/api/users/:id/role', async (c) => {
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
+  const id = c.req.param('id');
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const role: UserRole = body.role === 'admin' ? 'admin' : 'tech';
+  if (role === 'tech') {
+    const target = await getUserById(c.env.DB, id);
+    if (target && target.role === 'admin' && (await countActiveAdmins(c.env.DB)) <= 1) {
+      return c.json({ error: 'Cannot demote the last admin.' }, 400);
+    }
+  }
+  await c.env.DB.prepare(`UPDATE users SET role = ?1, token_version = token_version + 1 WHERE id = ?2`)
+    .bind(role, id)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.post('/api/users/:id/reset-password', async (c) => {
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
+  const id = c.req.param('id');
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const pw = passwordProblem(String(body.new_password || ''));
+  if (pw) return c.json({ error: pw }, 400);
+  const hash = await hashPassword(String(body.new_password));
+  await c.env.DB.prepare(
+    `UPDATE users SET password_hash = ?1, token_version = token_version + 1,
+      failed_attempts = 0, lockout_until = NULL WHERE id = ?2`
+  )
+    .bind(hash, id)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.post('/api/users/:id/disable', async (c) => {
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
+  const id = c.req.param('id');
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const disabled = body.disabled ? 1 : 0;
+  if (disabled) {
+    const target = await getUserById(c.env.DB, id);
+    if (target && target.role === 'admin' && (await countActiveAdmins(c.env.DB)) <= 1) {
+      return c.json({ error: 'Cannot disable the last admin.' }, 400);
+    }
+  }
+  await c.env.DB.prepare(`UPDATE users SET disabled = ?1, token_version = token_version + 1 WHERE id = ?2`)
+    .bind(disabled, id)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/users/:id', async (c) => {
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
+  const id = c.req.param('id');
+  if (guard.id === id) return c.json({ error: 'You cannot delete your own account.' }, 400);
+  const target = await getUserById(c.env.DB, id);
+  if (target && target.role === 'admin' && (await countActiveAdmins(c.env.DB)) <= 1) {
+    return c.json({ error: 'Cannot delete the last admin.' }, 400);
+  }
+  await c.env.DB.prepare(`DELETE FROM users WHERE id = ?1`).bind(id).run();
+  return c.json({ ok: true, deleted: id });
+});
 
 // --- POST /api/report : agent submits a report ----------------------------
 app.post('/api/report', async (c) => {
@@ -340,8 +745,8 @@ app.post('/api/checks', async (c) => {
 
 // --- GET /api/servers : list all servers with latest status ---------------
 app.get('/api/servers', async (c) => {
-  const block = requireAllowedIp(c);
-  if (block) return block;
+  const guard = await requireUser(c);
+  if (guard instanceof Response) return guard;
 
   const staleAfter = staleMinutes(c.env);
   const now = Date.now();
@@ -402,8 +807,8 @@ app.get('/api/servers', async (c) => {
 
 // --- GET /api/servers/:id : detail with recent history --------------------
 app.get('/api/servers/:id', async (c) => {
-  const block = requireAllowedIp(c);
-  if (block) return block;
+  const guard = await requireUser(c);
+  if (guard instanceof Response) return guard;
 
   const id = c.req.param('id');
   const staleAfter = staleMinutes(c.env);
@@ -511,8 +916,8 @@ app.get('/api/servers/:id', async (c) => {
 
 // --- POST /api/servers : admin creates a server + generates a key ---------
 app.post('/api/servers', async (c) => {
-  const block = requireAdmin(c);
-  if (block) return block;
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
 
   let body: { name?: string; client_name?: string; location?: string };
   try {
@@ -557,8 +962,8 @@ app.post('/api/servers', async (c) => {
 // dormant. For a graceful removal that also uninstalls the agent, use
 // /decommission below.
 app.delete('/api/servers/:id', async (c) => {
-  const block = requireAdmin(c);
-  if (block) return block;
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
 
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare(`SELECT id FROM servers WHERE id = ?1`)
@@ -577,8 +982,8 @@ app.delete('/api/servers/:id', async (c) => {
 // stays visible (as "decommissioning") until the agent checks in and completes;
 // force-remove it with DELETE above if the agent never comes back.
 app.post('/api/servers/:id/decommission', async (c) => {
-  const block = requireAdmin(c);
-  if (block) return block;
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
 
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare(`SELECT id FROM servers WHERE id = ?1`)
@@ -598,8 +1003,8 @@ app.post('/api/servers/:id/decommission', async (c) => {
 
 // --- POST /api/servers/:id/rotate-key : admin revokes + reissues a key ----
 app.post('/api/servers/:id/rotate-key', async (c) => {
-  const block = requireAdmin(c);
-  if (block) return block;
+  const guard = await requireAdmin(c);
+  if (guard instanceof Response) return guard;
 
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare(`SELECT id FROM servers WHERE id = ?1`)
