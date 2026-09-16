@@ -1,16 +1,21 @@
 ; Inno Setup script for the MML Server Agent.
 ;
-; Produces a single setup.exe that:
+; Fresh install:
 ;   1. asks the technician for the company (client) name,
 ;   2. installs the agent to Program Files,
 ;   3. self-enrols the server (auto-detecting the hostname), which creates the
 ;      dashboard item and writes config.json with this server's key,
 ;   4. installs and starts the Windows service (via WinSW).
 ;
+; In-place upgrade (config.json already present, incl. an older install):
+;   - no prompts; the existing config.json / key is kept (no re-enrol),
+;   - the running service is stopped so its binaries can be replaced,
+;   - the service registration is refreshed and started on the new version.
+;
 ; The Worker API URL and the enrollment token are baked in at BUILD time via
 ; preprocessor defines, so they are NOT stored in this file. build.ps1 passes
 ; them, e.g:
-;   iscc /DApiUrl=https://... /DEnrollToken=<token> /DAppVersion=0.1.0 mml-agent.iss
+;   iscc /DApiUrl=https://... /DEnrollToken=<token> /DAppVersion=0.2.1 mml-agent.iss
 ;
 ; Requirements in this folder before building (see installer/README.md):
 ;   ..\dist\mml-agent.exe           (built with `npm run build:exe`)
@@ -24,11 +29,12 @@
   #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.1"
 #endif
 
 #define AppName "MML Server Agent"
 #define Publisher "Micro Maintenance Limited"
+#define ServiceId "MMLServerAgent"
 
 [Setup]
 AppId={{4C6F2C1E-3B2A-4E5D-9F7A-2B9E1D6A7C01}
@@ -52,22 +58,28 @@ WizardStyle=modern
 ; SignTool=azuretrustedsigning $f
 
 [Files]
+; config.json / state.json / logs are NOT listed here, so an upgrade preserves
+; the enrollment and history.
 Source: "..\dist\mml-agent.exe";          DestDir: "{app}"; Flags: ignoreversion
 Source: "vendor\mml-agent-service.exe";   DestDir: "{app}"; Flags: ignoreversion
 Source: "mml-agent-service.xml";          DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
-; 1. Enrol this server (creates the dashboard item, writes config.json).
+; On upgrade only: remove the old service registration (the service was already
+; stopped before files were copied). Skipped on a fresh install.
+Filename: "{app}\mml-agent-service.exe"; Parameters: "uninstall"; \
+  Check: IsUpgradeCheck; Flags: runhidden waituntilterminated
+
+; Fresh install only: enrol this server (creates the dashboard item, writes
+; config.json). Upgrades keep the existing config and key.
 Filename: "{app}\mml-agent.exe"; Parameters: "{code:BuildEnrollArgs}"; \
   StatusMsg: "Registering this server with the dashboard..."; \
-  Flags: runhidden waituntilterminated
+  Check: NeedsEnrollCheck; Flags: runhidden waituntilterminated
 
-; 2. Install the Windows service.
+; Install (or re-register) the service on the new binaries, and start it.
 Filename: "{app}\mml-agent-service.exe"; Parameters: "install"; \
   StatusMsg: "Installing the MML Server Agent service..."; \
   Flags: runhidden waituntilterminated
-
-; 3. Start it now.
 Filename: "{app}\mml-agent-service.exe"; Parameters: "start"; \
   StatusMsg: "Starting the MML Server Agent service..."; \
   Flags: runhidden waituntilterminated
@@ -82,15 +94,23 @@ Filename: "{app}\mml-agent-service.exe"; Parameters: "uninstall";  Flags: runhid
 [UninstallDelete]
 ; Remove generated files the installer did not lay down.
 Type: files;          Name: "{app}\config.json"
+Type: files;          Name: "{app}\state.json"
 Type: filesandordirs; Name: "{app}\logs"
 
 [Code]
 var
   CompanyPage: TInputQueryWizardPage;
+  NeedsEnroll: Boolean;   { True on a fresh install (no config.json present). }
+
+function ConfigExists(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{autopf}\MML\Server Agent\config.json'));
+end;
 
 procedure InitializeWizard;
 begin
-  { A single custom page asking for the client/company name and optional site. }
+  NeedsEnroll := not ConfigExists();
+
   CompanyPage := CreateInputQueryPage(wpSelectDir,
     'Client details',
     'Which client does this server belong to?',
@@ -100,11 +120,16 @@ begin
   CompanyPage.Add('Location / site (optional):', False);
 end;
 
+{ Skip the company prompt on an upgrade. }
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = CompanyPage.ID) and (not NeedsEnroll);
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  { Require a company name before leaving the custom page. }
-  if CurPageID = CompanyPage.ID then
+  if (CurPageID = CompanyPage.ID) and NeedsEnroll then
   begin
     if Trim(CompanyPage.Values[0]) = '' then
     begin
@@ -114,15 +139,37 @@ begin
   end;
 end;
 
-{ Escape a double quote for a command-line argument (rare, but safe). }
+{ Before files are copied, stop any running service so its exe is not locked.
+  This is what makes an in-place upgrade possible. Harmless if not installed. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssInstall then
+  begin
+    Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceId}', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+    Sleep(1500);
+  end;
+end;
+
+function NeedsEnrollCheck(): Boolean;
+begin
+  Result := NeedsEnroll;
+end;
+
+function IsUpgradeCheck(): Boolean;
+begin
+  Result := not NeedsEnroll;
+end;
+
 function QuoteArg(const S: String): String;
 begin
   Result := '"' + S + '"';
 end;
 
-{ Build the full argument string for `mml-agent.exe enroll`. The location flag
-  is only included when a location was entered, so an empty value never turns
-  into a stray argument. }
+{ Build the argument string for `mml-agent.exe enroll`. Location is only added
+  when entered, so an empty value never becomes a stray argument. }
 function BuildEnrollArgs(Param: String): String;
 var
   Company, Location, Args: String;
