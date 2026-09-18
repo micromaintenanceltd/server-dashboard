@@ -142,12 +142,18 @@ function csrfOk(req, port) {
 }
 
 // The config we return to the page. Strips internal fields; adds hostname.
+// The API key is NEVER sent to the browser: we return an empty value plus a
+// flag saying whether one is stored. The page keeps the existing key when the
+// field is left blank, and rotates it only when a new value is typed. This
+// means the key cannot be read back through the loopback page.
 function publicConfig(cfg) {
   const out = {};
   for (const [k, v] of Object.entries(cfg)) {
     if (k.startsWith('_')) continue;
     out[k] = v;
   }
+  out.apiKey = '';
+  out.apiKeySet = !!(cfg.apiKey && String(cfg.apiKey).trim());
   out._hostname = os.hostname();
   return out;
 }

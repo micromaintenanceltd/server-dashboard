@@ -62,10 +62,10 @@ const PAGE = `<!doctype html>
     <input id="apiUrl" type="text" placeholder="https://mml-dashboard-api.example.workers.dev" />
     <label>API key (per-server)</label>
     <div class="reveal">
-      <input id="apiKey" type="password" placeholder="mml_..." />
+      <input id="apiKey" type="password" autocomplete="off" />
       <button class="ghost" type="button" onclick="toggleKey()">Show</button>
     </div>
-    <p class="muted">This key authenticates this server to the dashboard. Changing it here changes what this one server uses.</p>
+    <p class="muted" id="apiKeyHint">This key authenticates this server to the dashboard. For security it is never shown here. Leave blank to keep the current key; type a new key only to rotate it.</p>
   </div>
 
   <div class="card">
@@ -197,7 +197,11 @@ async function load() {
   const r = await fetch('/api/config', { headers: H });
   current = await r.json();
   document.getElementById('apiUrl').value = current.apiUrl || '';
-  document.getElementById('apiKey').value = current.apiKey || '';
+  // The real key is never sent to the page. Show a placeholder indicating one
+  // is stored; a blank field on save keeps it.
+  const keyEl = document.getElementById('apiKey');
+  keyEl.value = '';
+  keyEl.placeholder = current.apiKeySet ? '•••••••• stored (leave blank to keep)' : 'mml_... (no key set yet)';
   document.getElementById('intervalMinutes').value = current.intervalMinutes || 5;
   document.getElementById('topProcessCount').value = current.topProcessCount ?? 5;
   document.getElementById('avProduct').value = current.avProduct || '';
@@ -215,7 +219,12 @@ async function load() {
 function buildConfig() {
   const cfg = JSON.parse(JSON.stringify(current));
   cfg.apiUrl = document.getElementById('apiUrl').value.trim();
-  cfg.apiKey = document.getElementById('apiKey').value.trim();
+  // Only send a key when the technician typed one (rotation). A blank field
+  // means keep the stored key, so we omit it entirely.
+  const typedKey = document.getElementById('apiKey').value.trim();
+  if (typedKey) cfg.apiKey = typedKey;
+  else delete cfg.apiKey;
+  delete cfg.apiKeySet;
   cfg.intervalMinutes = Number(document.getElementById('intervalMinutes').value) || 5;
   cfg.topProcessCount = Number(document.getElementById('topProcessCount').value) || 0;
   cfg.avProduct = document.getElementById('avProduct').value.trim();
@@ -251,11 +260,18 @@ async function save() {
   let cfg;
   try { cfg = buildConfig(); }
   catch (e) { return toast('Invalid JSON in one of the list fields: ' + e.message, false); }
-  if (!cfg.apiUrl || !cfg.apiKey) return toast('API URL and API key are required.', false);
+  if (!cfg.apiUrl) return toast('API URL is required.', false);
+  if (!current.apiKeySet && !cfg.apiKey) return toast('API key is required (no key is stored yet).', false);
   const r = await fetch('/api/config', { method: 'POST', headers: H, body: JSON.stringify(cfg) });
   const body = await r.json().catch(() => ({}));
-  if (r.ok) { toast('Settings saved.', true); current = cfg; }
-  else toast('Save failed: ' + (body.error || r.status), false);
+  if (r.ok) {
+    toast('Settings saved.', true);
+    // Reload from the server so the key stays masked and apiKeySet is accurate
+    // (a rotation may have just set one). Clears the typed key from the field.
+    await load();
+  } else {
+    toast('Save failed: ' + (body.error || r.status), false);
+  }
 }
 
 async function act(path, msg) {

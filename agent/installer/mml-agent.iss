@@ -29,7 +29,7 @@
   #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.3.1"
 #endif
 
 #define AppName "MML Server Agent"
@@ -82,6 +82,18 @@ Filename: "{app}\mml-agent-service.exe"; Parameters: "install"; \
   Flags: runhidden waituntilterminated
 Filename: "{app}\mml-agent-service.exe"; Parameters: "start"; \
   StatusMsg: "Starting the MML Server Agent service..."; \
+  Flags: runhidden waituntilterminated
+
+; Lock down the install folder so ONLY SYSTEM and local Administrators can read
+; it. config.json holds the per-server API key, so standard/RDP users must not
+; be able to read it. Well-known SIDs are used (S-1-5-18 = LocalSystem,
+; S-1-5-32-544 = Administrators) to avoid localisation issues:
+;   /inheritance:r  drop inherited ACEs (removes the default Users: Read)
+;   (OI)(CI)F       full control, inherited by files and subfolders
+;   /T /C           apply to existing children too, continue past locked files
+Filename: "{sys}\icacls.exe"; \
+  Parameters: """{app}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" /T /C"; \
+  StatusMsg: "Securing configuration (restricting access to administrators)..."; \
   Flags: runhidden waituntilterminated
 
 [UninstallRun]

@@ -122,7 +122,16 @@ function run() {
   function applyConfig(incoming) {
     if (!incoming || typeof incoming !== 'object') throw new Error('No config provided.');
     if (!incoming.apiUrl || String(incoming.apiUrl).trim() === '') throw new Error('API URL is required.');
-    if (!incoming.apiKey || String(incoming.apiKey).trim() === '') throw new Error('API key is required.');
+
+    // The settings page never receives the real API key, so a blank key means
+    // "keep the existing one" rather than "clear it". Only a non-blank value
+    // rotates the key.
+    if (!incoming.apiKey || String(incoming.apiKey).trim() === '') {
+      incoming.apiKey = live.apiKey;
+    }
+    if (!incoming.apiKey || String(incoming.apiKey).trim() === '') {
+      throw new Error('API key is required.');
+    }
 
     // Build a clean object to persist (drop internal/injected fields).
     const clean = {};
