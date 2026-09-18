@@ -26,6 +26,14 @@ const PAGE = `<!doctype html>
   .row > div { flex: 1; min-width: 140px; }
   .check { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
   .check input { width: auto; }
+  .checkblock { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #f8fafc; }
+  .checkblock .head { display: flex; align-items: center; gap: 8px; }
+  .checkblock .head input[type=checkbox] { width: 16px; height: 16px; }
+  .checkblock .head .name { font-weight: 600; color: #0f172a; }
+  .checkblock .desc { color: #64748b; font-size: 12px; margin: 4px 0 0 24px; }
+  .checkblock .fields { margin: 8px 0 2px 24px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .checkblock .fields > div { min-width: 140px; }
+  .checkblock.disabled { opacity: .55; }
   .muted { color: #64748b; font-size: 12px; }
   .btns { display: flex; gap: 10px; flex-wrap: wrap; position: sticky; bottom: 0; background: #f1f5f9; padding: 12px 0; }
   button { border: 0; border-radius: 6px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; }
@@ -87,11 +95,8 @@ const PAGE = `<!doctype html>
       <div><label>Minute</label><input id="schedMin" type="number" min="0" max="59" /></div>
     </div>
 
-    <div id="checkToggles" style="margin-top:12px"></div>
-
-    <label style="margin-top:12px">Required services (JSON array of {name, displayName})</label>
-    <textarea id="requiredServices"></textarea>
-    <p class="muted">These must be running or the weekly check fails. Use exact Windows service names.</p>
+    <p class="muted" style="margin-top:12px">Tick the checks to run each week. Client-specific checks also skip themselves automatically if the application is not installed on this server.</p>
+    <div id="checkToggles" style="margin-top:6px"></div>
   </div>
 
   <div class="btns">
@@ -118,47 +123,73 @@ function toggleKey() {
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 
-// The list of checks with the numeric thresholds we expose per check.
-const CHECK_FIELDS = {
-  windowsServerBackup: ['maxAgeHours'],
-  requiredServices: [],
-  diskSpace: ['warnFreePercent', 'failFreePercent'],
-  pendingUpdates: ['failCount'],
-  lastUpdate: ['maxDays'],
-  antivirus: ['scanStaleDays'],
-  pendingReboot: [],
-  firewall: [],
-  eventLogErrors: ['days', 'warnCount'],
-};
-const CHECK_LABELS = {
-  windowsServerBackup: 'Windows Server Backup',
-  requiredServices: 'Required services',
-  diskSpace: 'Disk space',
-  pendingUpdates: 'Pending updates',
-  lastUpdate: 'Last update installed',
-  antivirus: 'Antivirus',
-  pendingReboot: 'Pending reboot',
-  firewall: 'Windows Firewall',
-  eventLogErrors: 'Event log errors',
-};
+// MML's six weekly checks, in display order. Each has a tickbox plus any
+// per-check fields. Field types: 'number', 'text', 'list' (one entry per line).
+const CHECKS = [
+  { key: 'windowsServerBackup', label: 'Windows Server Backup',
+    desc: 'Always applies. Warns if the last successful backup is older than the age below.',
+    fields: [{ key: 'maxAgeHours', label: 'Max age (hours)', type: 'number' }] },
+  { key: 'sage', label: 'Sage 50 (file backup)',
+    desc: 'Skips automatically if Sage 50 Accounts is not installed. Backup folders are auto-discovered.',
+    fields: [{ key: 'staleHours', label: 'Stale after (hours)', type: 'number' }] },
+  { key: 'rdpguard', label: 'RDPGuard',
+    desc: 'Skips automatically if RDPGuard is not installed. Fails if installed but not running.',
+    fields: [] },
+  { key: 'irisInvu', label: 'IRIS / INVU',
+    desc: 'Skips unless the INVU V6 Business Engine service is present. Checks IRIS*.bak and IRISDOCS*.zip in the folder below.',
+    fields: [
+      { key: 'backupPath', label: 'IRIS backup folder', type: 'text', placeholder: 'e.g. D:\\\\IRIS\\\\Backups' },
+      { key: 'staleHours', label: 'Stale after (hours)', type: 'number' },
+    ] },
+  { key: 'sageSql', label: 'Sage SQL backups',
+    desc: 'Runs only when one or more folders are listed. Each folder is scanned for the latest .bak/.zip.',
+    fields: [
+      { key: 'paths', label: 'Backup folders (one per line)', type: 'list' },
+      { key: 'staleHours', label: 'Stale after (hours)', type: 'number' },
+    ] },
+  { key: 'storagecraft', label: 'StorageCraft ShadowProtect SPX',
+    desc: 'Skips automatically if ShadowProtect SPX is not installed. Reads job results from the SPX logs.',
+    fields: [{ key: 'staleHours', label: 'Stale after (hours)', type: 'number' }] },
+];
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function renderToggles(checks) {
   const wrap = document.getElementById('checkToggles');
   wrap.innerHTML = '';
-  for (const key of Object.keys(CHECK_FIELDS)) {
-    const cfg = checks[key] || {};
-    const row = document.createElement('div');
-    row.className = 'check';
+  for (const chk of CHECKS) {
+    const cfg = checks[chk.key] || {};
     const enabled = cfg.enabled !== false;
-    let html = '<input type="checkbox" id="en_' + key + '"' + (enabled ? ' checked' : '') + ' />';
-    html += '<label style="margin:0;min-width:170px;color:#0f172a">' + CHECK_LABELS[key] + '</label>';
-    for (const f of CHECK_FIELDS[key]) {
-      const v = cfg[f] != null ? cfg[f] : '';
-      html += '<span style="font-size:12px;color:#64748b">' + f + '</span>' +
-              '<input type="number" id="f_' + key + '_' + f + '" value="' + v + '" style="width:90px" />';
+    const block = document.createElement('div');
+    block.className = 'checkblock' + (enabled ? '' : ' disabled');
+
+    let fieldsHtml = '';
+    for (const f of chk.fields) {
+      let inputHtml;
+      if (f.type === 'list') {
+        const arr = Array.isArray(cfg[f.key]) ? cfg[f.key] : [];
+        inputHtml = '<textarea id="f_' + chk.key + '_' + f.key + '" style="min-height:60px">' + esc(arr.join('\\n')) + '</textarea>';
+      } else if (f.type === 'text') {
+        inputHtml = '<input type="text" id="f_' + chk.key + '_' + f.key + '" value="' + esc(cfg[f.key] != null ? cfg[f.key] : '') + '"' + (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : '') + ' />';
+      } else {
+        inputHtml = '<input type="number" id="f_' + chk.key + '_' + f.key + '" value="' + esc(cfg[f.key] != null ? cfg[f.key] : '') + '" style="width:120px" />';
+      }
+      fieldsHtml += '<div><label style="margin:0 0 4px">' + esc(f.label) + '</label>' + inputHtml + '</div>';
     }
-    row.innerHTML = html;
-    wrap.appendChild(row);
+
+    block.innerHTML =
+      '<div class="head"><input type="checkbox" id="en_' + chk.key + '"' + (enabled ? ' checked' : '') + ' />' +
+      '<span class="name">' + esc(chk.label) + '</span></div>' +
+      '<div class="desc">' + esc(chk.desc) + '</div>' +
+      (fieldsHtml ? '<div class="fields">' + fieldsHtml + '</div>' : '');
+    wrap.appendChild(block);
+
+    // Dim the block when unticked, as a quick visual cue.
+    block.querySelector('#en_' + chk.key).addEventListener('change', (e) => {
+      block.classList.toggle('disabled', !e.target.checked);
+    });
   }
 }
 
@@ -178,8 +209,6 @@ async function load() {
   document.getElementById('schedHour').value = sch.hour ?? 7;
   document.getElementById('schedMin').value = sch.minute ?? 0;
   renderToggles(checks);
-  const req = (checks.requiredServices && (checks.requiredServices.list || checks.requiredServices)) || [];
-  document.getElementById('requiredServices').value = JSON.stringify(Array.isArray(req) ? req : [], null, 2);
   document.getElementById('hostline').textContent = 'Local configuration for ' + (current._hostname || 'this server');
 }
 
@@ -199,16 +228,22 @@ function buildConfig() {
     hour: Number(document.getElementById('schedHour').value) || 0,
     minute: Number(document.getElementById('schedMin').value) || 0,
   };
-  for (const key of Object.keys(CHECK_FIELDS)) {
-    const c = checks[key] && typeof checks[key] === 'object' && !Array.isArray(checks[key]) ? checks[key] : {};
-    c.enabled = document.getElementById('en_' + key).checked;
-    for (const f of CHECK_FIELDS[key]) {
-      const el = document.getElementById('f_' + key + '_' + f);
-      if (el && el.value !== '') c[f] = Number(el.value);
+  for (const chk of CHECKS) {
+    const c = checks[chk.key] && typeof checks[chk.key] === 'object' && !Array.isArray(checks[chk.key]) ? checks[chk.key] : {};
+    c.enabled = document.getElementById('en_' + chk.key).checked;
+    for (const f of chk.fields) {
+      const el = document.getElementById('f_' + chk.key + '_' + f.key);
+      if (!el) continue;
+      if (f.type === 'list') {
+        c[f.key] = el.value.split(/\\r?\\n/).map((s) => s.trim()).filter(Boolean);
+      } else if (f.type === 'text') {
+        c[f.key] = el.value.trim();
+      } else if (el.value !== '') {
+        c[f.key] = Number(el.value);
+      }
     }
-    checks[key] = c;
+    checks[chk.key] = c;
   }
-  checks.requiredServices = { list: JSON.parse(document.getElementById('requiredServices').value || '[]') };
   return cfg;
 }
 

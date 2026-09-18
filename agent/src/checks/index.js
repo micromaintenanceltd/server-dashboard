@@ -1,38 +1,30 @@
 // Runs the configured weekly checks and returns an array of findings:
 //   [{ id, title, status: 'pass'|'warn'|'fail', detail, value }]
 //
-// Shared inputs (disks, patch, AV) are gathered once from the existing
-// collectors and passed to the checks that need them, so we do not run the same
-// PowerShell queries twice.
-
-const { disks } = require('../collectors/disk');
-const { patchStatus } = require('../collectors/patch');
-const { avStatus } = require('../collectors/av');
+// These are MML's six production backup/health checks. Client-specific checks
+// (Sage, RDPGuard, IRIS/INVU, Sage SQL, StorageCraft) return null to skip
+// themselves when the relevant application is not installed/configured on the
+// server, so a given server only reports the checks that apply to it.
 
 const windowsServerBackup = require('./windowsServerBackup');
-const requiredServices = require('./requiredServices');
-const diskSpace = require('./diskSpace');
-const { pendingUpdates, lastUpdate } = require('./updates');
-const antivirus = require('./antivirus');
-const pendingReboot = require('./pendingReboot');
-const firewall = require('./firewall');
-const eventLogErrors = require('./eventLogErrors');
+const sage = require('./sage');
+const rdpguard = require('./rdpguard');
+const irisInvu = require('./irisInvu');
+const sageSql = require('./sageSql');
+const storagecraft = require('./storagecraft');
 
 // Display order.
 const REGISTRY = [
   windowsServerBackup,
-  requiredServices,
-  diskSpace,
-  pendingUpdates,
-  lastUpdate,
-  antivirus,
-  pendingReboot,
-  firewall,
-  eventLogErrors,
+  sage,
+  rdpguard,
+  irisInvu,
+  sageSql,
+  storagecraft,
 ];
 
-// A check is enabled unless its config object sets enabled:false. (Config that
-// is an array, like requiredServices, is always considered enabled.)
+// A check is enabled unless its config object sets enabled:false (the tickbox
+// on the local settings page). A check with no config entry defaults to on.
 function isEnabled(mod, checkCfg) {
   if (checkCfg && typeof checkCfg === 'object' && !Array.isArray(checkCfg) && checkCfg.enabled === false) {
     return false;
@@ -42,9 +34,6 @@ function isEnabled(mod, checkCfg) {
 
 async function runAllChecks(cfg) {
   const shared = {};
-  try { shared.disks = await disks(); } catch { shared.disks = []; }
-  try { shared.patch = await patchStatus(); } catch { shared.patch = {}; }
-  try { shared.av = await avStatus(cfg); } catch { shared.av = {}; }
 
   const checksCfg = cfg.checks || {};
   const results = [];
@@ -55,6 +44,9 @@ async function runAllChecks(cfg) {
 
     try {
       const res = await mod.run(cfg, shared, checkCfg || {});
+      // A null result means the check does not apply to this server (e.g. the
+      // application is not installed) — skip it silently.
+      if (res == null) continue;
       results.push({
         id: mod.id,
         title: mod.title,

@@ -15,7 +15,7 @@
 ; The Worker API URL and the enrollment token are baked in at BUILD time via
 ; preprocessor defines, so they are NOT stored in this file. build.ps1 passes
 ; them, e.g:
-;   iscc /DApiUrl=https://... /DEnrollToken=<token> /DAppVersion=0.2.1 mml-agent.iss
+;   iscc /DApiUrl=https://... /DEnrollToken=<token> /DAppVersion=0.3.0 mml-agent.iss
 ;
 ; Requirements in this folder before building (see installer/README.md):
 ;   ..\dist\mml-agent.exe           (built with `npm run build:exe`)
@@ -29,7 +29,7 @@
   #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.2.1"
+  #define AppVersion "0.3.0"
 #endif
 
 #define AppName "MML Server Agent"
