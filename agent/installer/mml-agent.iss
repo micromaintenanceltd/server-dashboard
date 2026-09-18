@@ -29,7 +29,7 @@
   #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.1"
+  #define AppVersion "0.3.2"
 #endif
 
 #define AppName "MML Server Agent"
@@ -76,24 +76,24 @@ Filename: "{app}\mml-agent.exe"; Parameters: "{code:BuildEnrollArgs}"; \
   StatusMsg: "Registering this server with the dashboard..."; \
   Check: NeedsEnrollCheck; Flags: runhidden waituntilterminated
 
+; Lock down ONLY config.json (which holds the per-server API key) so standard /
+; RDP users cannot read it. We deliberately do NOT touch the whole folder or the
+; binaries: an earlier build locked the folder with /T while the service exe was
+; running, which left SYSTEM unable to start the service. Locking just this one
+; file - before the service starts - is enough and cannot affect the binaries.
+; Well-known SIDs avoid localisation issues (S-1-5-18 = LocalSystem,
+; S-1-5-32-544 = Administrators). Gated on the file existing so it never errors.
+Filename: "{sys}\icacls.exe"; \
+  Parameters: """{app}\config.json"" /inheritance:r /grant:r ""*S-1-5-18:F"" ""*S-1-5-32-544:F"""; \
+  StatusMsg: "Securing the API key (administrators only)..."; \
+  Check: ConfigExists; Flags: runhidden waituntilterminated
+
 ; Install (or re-register) the service on the new binaries, and start it.
 Filename: "{app}\mml-agent-service.exe"; Parameters: "install"; \
   StatusMsg: "Installing the MML Server Agent service..."; \
   Flags: runhidden waituntilterminated
 Filename: "{app}\mml-agent-service.exe"; Parameters: "start"; \
   StatusMsg: "Starting the MML Server Agent service..."; \
-  Flags: runhidden waituntilterminated
-
-; Lock down the install folder so ONLY SYSTEM and local Administrators can read
-; it. config.json holds the per-server API key, so standard/RDP users must not
-; be able to read it. Well-known SIDs are used (S-1-5-18 = LocalSystem,
-; S-1-5-32-544 = Administrators) to avoid localisation issues:
-;   /inheritance:r  drop inherited ACEs (removes the default Users: Read)
-;   (OI)(CI)F       full control, inherited by files and subfolders
-;   /T /C           apply to existing children too, continue past locked files
-Filename: "{sys}\icacls.exe"; \
-  Parameters: """{app}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" /T /C"; \
-  StatusMsg: "Securing configuration (restricting access to administrators)..."; \
   Flags: runhidden waituntilterminated
 
 [UninstallRun]
