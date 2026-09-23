@@ -29,7 +29,7 @@
   #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.3"
+  #define AppVersion "0.3.4"
 #endif
 
 #define AppName "MML Server Agent"

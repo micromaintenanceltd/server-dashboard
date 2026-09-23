@@ -21,6 +21,17 @@ const log = require('./logger');
 
 const AGENT_VERSION = require('../package.json').version;
 
+// Catch anything that would otherwise terminate the process silently. Under the
+// Windows service these are the errors we could never see before; the logger
+// writes them to logs\agent.log synchronously.
+process.on('uncaughtException', (err) => {
+  log.error('uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (err) => {
+  log.error('unhandledRejection:', err);
+});
+
 function usage() {
   console.log(
     [
