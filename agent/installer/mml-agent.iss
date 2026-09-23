@@ -29,7 +29,7 @@
   #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.2"
+  #define AppVersion "0.3.3"
 #endif
 
 #define AppName "MML Server Agent"
@@ -76,17 +76,15 @@ Filename: "{app}\mml-agent.exe"; Parameters: "{code:BuildEnrollArgs}"; \
   StatusMsg: "Registering this server with the dashboard..."; \
   Check: NeedsEnrollCheck; Flags: runhidden waituntilterminated
 
-; Lock down ONLY config.json (which holds the per-server API key) so standard /
-; RDP users cannot read it. We deliberately do NOT touch the whole folder or the
-; binaries: an earlier build locked the folder with /T while the service exe was
-; running, which left SYSTEM unable to start the service. Locking just this one
-; file - before the service starts - is enough and cannot affect the binaries.
-; Well-known SIDs avoid localisation issues (S-1-5-18 = LocalSystem,
-; S-1-5-32-544 = Administrators). Gated on the file existing so it never errors.
+; Restore normal (inherited) permissions on the install folder. This is a
+; self-heal step: earlier builds (0.3.1/0.3.2) applied a custom ACL that could
+; leave SYSTEM unable to start the service. /reset re-applies the permissions
+; inherited from Program Files (SYSTEM + Administrators full), which is what the
+; service needs. Harmless on a clean install. /C continues past any locked file.
 Filename: "{sys}\icacls.exe"; \
-  Parameters: """{app}\config.json"" /inheritance:r /grant:r ""*S-1-5-18:F"" ""*S-1-5-32-544:F"""; \
-  StatusMsg: "Securing the API key (administrators only)..."; \
-  Check: ConfigExists; Flags: runhidden waituntilterminated
+  Parameters: """{app}"" /reset /T /C"; \
+  StatusMsg: "Applying folder permissions..."; \
+  Flags: runhidden waituntilterminated
 
 ; Install (or re-register) the service on the new binaries, and start it.
 Filename: "{app}\mml-agent-service.exe"; Parameters: "install"; \
