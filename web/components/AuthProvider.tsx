@@ -95,13 +95,36 @@ function Shell({
   children: React.ReactNode;
 }) {
   const { signOut } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Restore the saved collapse preference (per browser) after mount.
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem('mml_sidebar_collapsed') === '1');
+    } catch {}
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('mml_sidebar_collapsed', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  }, []);
+
   if (loading) return <Splash>Loading...</Splash>;
   if (pathname === '/login') return <>{children}</>;
   if (!user) return <Splash>Redirecting to sign in...</Splash>;
   return (
     <>
-      <Sidebar user={user} onSignOut={signOut} />
-      <main className="ml-60 min-h-screen">{children}</main>
+      <Sidebar user={user} onSignOut={signOut} collapsed={collapsed} onToggle={toggleCollapsed} />
+      <main
+        className={`min-h-screen transition-[margin] duration-200 ${collapsed ? 'ml-16' : 'ml-60'}`}
+      >
+        {children}
+      </main>
     </>
   );
 }
