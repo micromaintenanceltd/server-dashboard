@@ -7,7 +7,7 @@ import { fetchServers } from '@/lib/api';
 import type { ServerListItem, ServersResponse, ServerStatus, CheckStatus } from '@/lib/types';
 import { StatusBadge, StatusDot } from '@/components/StatusBadge';
 import { UsageBar } from '@/components/UsageBar';
-import { relativeAge, formatMb, CHECK_META, STATUS_META } from '@/lib/format';
+import { relativeAge, formatMb, CHECK_META } from '@/lib/format';
 import { ClientLogo } from '@/components/ClientLogo';
 
 const POLL_MS = 30_000;
@@ -85,14 +85,6 @@ function DevicesInner() {
   });
   const counts = countByStatus(all);
 
-  const filterLabel = checkFilter
-    ? `Weekly check: ${checkFilter === 'none' ? 'No check yet' : CHECK_META[checkFilter].label}`
-    : statusFilter
-      ? `Status: ${STATUS_META[statusFilter].label}`
-      : clientFilter
-        ? `Client: ${clientFilter}`
-        : null;
-
   return (
     <div className="px-8 py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -112,19 +104,13 @@ function DevicesInner() {
         </div>
       </header>
 
-      {filterLabel && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 font-medium text-brand-800">
-            {filterLabel}
-          </span>
-          <span className="text-slate-400">
-            {servers.length} of {all.length}
-          </span>
-          <Link href="/devices/" className="font-medium text-brand-600 hover:underline">
-            Clear filter
-          </Link>
-        </div>
-      )}
+      <FilterBar
+        all={all}
+        shown={servers.length}
+        status={statusFilter}
+        check={checkFilter}
+        client={clientFilter}
+      />
 
       {error && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -153,6 +139,118 @@ function DevicesInner() {
         <ServerTable servers={servers} />
       )}
     </div>
+  );
+}
+
+function FilterBar({
+  all,
+  shown,
+  status,
+  check,
+  client,
+}: {
+  all: ServerListItem[];
+  shown: number;
+  status: ServerStatus | null;
+  check: CheckStatus | 'none' | null;
+  client: string | null;
+}) {
+  const router = useRouter();
+  const clients = Array.from(new Set(all.map((s) => s.client_name).filter(Boolean))).sort();
+  const anyActive = !!(status || check || client);
+
+  function apply(next: { status?: string; check?: string; client?: string }) {
+    const merged = {
+      status: status ?? '',
+      check: check ?? '',
+      client: client ?? '',
+      ...next,
+    };
+    const p = new URLSearchParams();
+    if (merged.status) p.set('status', merged.status);
+    if (merged.check) p.set('check', merged.check);
+    if (merged.client) p.set('client', merged.client);
+    const qs = p.toString();
+    router.replace(qs ? `/devices/?${qs}` : '/devices/');
+  }
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+      <FilterSelect
+        label="Status"
+        value={status ?? ''}
+        onChange={(v) => apply({ status: v })}
+        options={[
+          ['', 'All statuses'],
+          ['online', 'Online'],
+          ['stale', 'Stale'],
+          ['offline', 'Offline'],
+          ['pending', 'Pending'],
+        ]}
+      />
+      <FilterSelect
+        label="Weekly check"
+        value={check ?? ''}
+        onChange={(v) => apply({ check: v })}
+        options={[
+          ['', 'All checks'],
+          ['pass', 'Pass'],
+          ['warn', 'Warn'],
+          ['fail', 'Fail'],
+          ['none', 'No check yet'],
+        ]}
+      />
+      <FilterSelect
+        label="Client"
+        value={client ?? ''}
+        onChange={(v) => apply({ client: v })}
+        options={[['', 'All clients'], ...clients.map((c) => [c, c] as [string, string])]}
+      />
+      <span className="text-slate-400">
+        {shown} of {all.length}
+      </span>
+      {anyActive && (
+        <button
+          onClick={() => router.replace('/devices/')}
+          className="font-medium text-brand-600 hover:underline"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: [string, string][];
+}) {
+  const active = value !== '';
+  return (
+    <label className="inline-flex items-center">
+      <span className="sr-only">{label}</span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`rounded-md border px-2.5 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-200 ${
+          active ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-300 bg-white text-slate-700'
+        }`}
+      >
+        {options.map(([v, l]) => (
+          <option key={v} value={v}>
+            {v === '' ? l : `${label}: ${l}`}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
