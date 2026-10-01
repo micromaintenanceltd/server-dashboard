@@ -127,6 +127,10 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
   const [emailKey, setEmailKey] = useState('');
   const [emailTo, setEmailTo] = useState('');
   const [emailFrom, setEmailFrom] = useState('');
+  const [fdKey, setFdKey] = useState('');
+  const [fdDomain, setFdDomain] = useState('');
+  const [fdEmail, setFdEmail] = useState('');
+  const [fdGroup, setFdGroup] = useState('');
   const [onCheck, setOnCheck] = useState(true);
   const [onOffline, setOnOffline] = useState(true);
   const [onCrit, setOnCrit] = useState(true);
@@ -139,11 +143,15 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
       setCfg(c);
       setEmailTo(c.email_to);
       setEmailFrom(c.email_from);
+      setFdDomain(c.freshdesk_domain);
+      setFdEmail(c.freshdesk_email);
+      setFdGroup(c.freshdesk_group_id);
       setOnCheck(c.on_check_fail);
       setOnOffline(c.on_offline);
       setOnCrit(c.on_crit_stopped);
       setTeams('');
       setEmailKey('');
+      setFdKey('');
     } catch (err: any) {
       onError(err.message || 'Failed to load alert settings');
     }
@@ -161,12 +169,16 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
       const body: Record<string, unknown> = {
         email_to: emailTo,
         email_from: emailFrom,
+        freshdesk_domain: fdDomain,
+        freshdesk_email: fdEmail,
+        freshdesk_group_id: fdGroup,
         on_check_fail: onCheck,
         on_offline: onOffline,
         on_crit_stopped: onCrit,
       };
       if (teams.trim()) body.teams_webhook_url = teams.trim();
       if (emailKey.trim()) body.email_api_key = emailKey.trim();
+      if (fdKey.trim()) body.freshdesk_api_key = fdKey.trim();
       await saveAlertConfig(body);
       await reload();
       setStatus('Saved.');
@@ -177,11 +189,17 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
     }
   }
 
-  async function clearSecret(which: 'teams' | 'email') {
+  async function clearSecret(which: 'teams' | 'email' | 'freshdesk') {
     setBusy(true);
     onError('');
     try {
-      await saveAlertConfig(which === 'teams' ? { clear_teams: true } : { clear_email_key: true });
+      const payload =
+        which === 'teams'
+          ? { clear_teams: true }
+          : which === 'email'
+            ? { clear_email_key: true }
+            : { clear_freshdesk_key: true };
+      await saveAlertConfig(payload);
       await reload();
     } catch (err: any) {
       onError(err.message || 'Failed to update');
@@ -199,6 +217,7 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
       const parts: string[] = [];
       if (r.teams != null) parts.push(`Teams ${r.teams ? 'sent ✓' : 'failed ✗'}`);
       if (r.email != null) parts.push(`Email ${r.email ? 'sent ✓' : 'failed ✗'}`);
+      if (r.freshdesk != null) parts.push(`Freshdesk ${r.freshdesk ? 'auth ok ✓' : 'failed ✗'}`);
       setStatus((parts.join(' · ') || 'Nothing configured') + (r.errors.length ? ` — ${r.errors.join('; ')}` : ''));
     } catch (err: any) {
       onError(err.message || 'Test failed');
@@ -283,6 +302,65 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
               Email stays off until all three email fields are set. Teams works on its own.
             </p>
           </div>
+        </div>
+
+        {/* Freshdesk */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2 text-xs font-medium text-slate-600">
+            Freshdesk (raise a ticket on failure, auto-resolve on recovery)
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Freshdesk domain</label>
+            <input
+              type="text"
+              value={fdDomain}
+              onChange={(e) => setFdDomain(e.target.value)}
+              placeholder="micromaintenance (→ micromaintenance.freshdesk.com)"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Requester email (ticket raised under)</label>
+            <input
+              type="text"
+              value={fdEmail}
+              onChange={(e) => setFdEmail(e.target.value)}
+              placeholder="alerts@micromaintenance.co.uk"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Group ID (optional)</label>
+            <input
+              type="text"
+              value={fdGroup}
+              onChange={(e) => setFdGroup(e.target.value)}
+              placeholder="e.g. 205000066002"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Freshdesk API key</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                autoComplete="off"
+                value={fdKey}
+                onChange={(e) => setFdKey(e.target.value)}
+                placeholder={cfg.freshdesk_key_set ? '•••••••• set (leave blank to keep)' : 'API key'}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+              {cfg.freshdesk_key_set && (
+                <button className="btn-ghost whitespace-nowrap px-3 py-2" disabled={busy} onClick={() => clearSecret('freshdesk')}>
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="sm:col-span-2 text-xs text-slate-500">
+            Freshdesk stays off until domain, requester email and API key are all set. Use a current
+            API key — the one from the old script was flagged for rotation.
+          </p>
         </div>
 
         {/* Triggers */}

@@ -205,6 +205,10 @@ export interface AlertConfigView {
   email_key_set: boolean;
   email_to: string;
   email_from: string;
+  freshdesk_key_set: boolean;
+  freshdesk_domain: string;
+  freshdesk_email: string;
+  freshdesk_group_id: string;
   on_check_fail: boolean;
   on_offline: boolean;
   on_crit_stopped: boolean;
@@ -219,6 +223,7 @@ export async function testAlert(): Promise<{
   ok: boolean;
   teams: boolean | null;
   email: boolean | null;
+  freshdesk: boolean | null;
   errors: string[];
 }> {
   return request('/api/alert-config/test', { method: 'POST', body: {} });

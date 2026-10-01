@@ -23,7 +23,13 @@ import {
   type UserRow,
   type UserRole,
 } from './auth/users';
-import { loadAlertConfig, deliver, evaluateAlert, buildMessage } from './alerts';
+import {
+  loadAlertConfig,
+  deliver,
+  evaluateAlert,
+  freshdeskReady,
+  freshdeskValidate,
+} from './alerts';
 
 // Re-export the Durable Object classes so the runtime can find them.
 export { ServerState } from './durable/serverState';
@@ -65,14 +71,29 @@ async function ensureSchema(db: D1Database): Promise<void> {
     // used to fire only on transitions (bad <-> recovered).
     await db
       .prepare(
-        `CREATE TABLE IF NOT EXISTS alert_config (id INTEGER PRIMARY KEY, teams_webhook_url TEXT, email_to TEXT, email_from TEXT, email_api_key TEXT, on_check_fail INTEGER NOT NULL DEFAULT 1, on_offline INTEGER NOT NULL DEFAULT 1, on_crit_stopped INTEGER NOT NULL DEFAULT 1, updated_at TEXT)`
+        `CREATE TABLE IF NOT EXISTS alert_config (id INTEGER PRIMARY KEY, teams_webhook_url TEXT, email_to TEXT, email_from TEXT, email_api_key TEXT, freshdesk_domain TEXT, freshdesk_api_key TEXT, freshdesk_email TEXT, freshdesk_group_id TEXT, on_check_fail INTEGER NOT NULL DEFAULT 1, on_offline INTEGER NOT NULL DEFAULT 1, on_crit_stopped INTEGER NOT NULL DEFAULT 1, updated_at TEXT)`
       )
       .run();
     await db
       .prepare(
-        `CREATE TABLE IF NOT EXISTS alert_state (server_id TEXT NOT NULL, kind TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, updated_at TEXT, PRIMARY KEY (server_id, kind))`
+        `CREATE TABLE IF NOT EXISTS alert_state (server_id TEXT NOT NULL, kind TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, ref TEXT, updated_at TEXT, PRIMARY KEY (server_id, kind))`
       )
       .run();
+    // Columns added after the alert tables first shipped (Freshdesk channel +
+    // the ticket-ref on alert_state). Table/column names are fixed literals.
+    const addColumns: [string, string][] = [
+      ['alert_config', 'freshdesk_domain'],
+      ['alert_config', 'freshdesk_api_key'],
+      ['alert_config', 'freshdesk_email'],
+      ['alert_config', 'freshdesk_group_id'],
+      ['alert_state', 'ref'],
+    ];
+    for (const [table, col] of addColumns) {
+      const exists = await db
+        .prepare(`SELECT 1 AS ok FROM pragma_table_info('${table}') WHERE name = '${col}'`)
+        .first();
+      if (!exists) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} TEXT`).run();
+    }
     schemaEnsured = true;
   } catch {
     // Leave unensured so a later request retries (e.g. table not created yet).
@@ -1218,6 +1239,10 @@ app.get('/api/alert-config', async (c) => {
     email_key_set: !!cfg.email_api_key,
     email_to: cfg.email_to ?? '',
     email_from: cfg.email_from ?? '',
+    freshdesk_key_set: !!cfg.freshdesk_api_key,
+    freshdesk_domain: cfg.freshdesk_domain ?? '',
+    freshdesk_email: cfg.freshdesk_email ?? '',
+    freshdesk_group_id: cfg.freshdesk_group_id ?? '',
     on_check_fail: cfg.on_check_fail,
     on_offline: cfg.on_offline,
     on_crit_stopped: cfg.on_crit_stopped,
@@ -1245,9 +1270,24 @@ app.post('/api/alert-config', async (c) => {
   else if (typeof body.email_api_key === 'string' && body.email_api_key.trim())
     emailKey = body.email_api_key.trim();
 
+  let fdKey = cur.freshdesk_api_key;
+  if (body.clear_freshdesk_key) fdKey = null;
+  else if (typeof body.freshdesk_api_key === 'string' && body.freshdesk_api_key.trim())
+    fdKey = body.freshdesk_api_key.trim();
+
   const emailTo = typeof body.email_to === 'string' ? body.email_to.trim() || null : cur.email_to;
   const emailFrom =
     typeof body.email_from === 'string' ? body.email_from.trim() || null : cur.email_from;
+  const fdDomain =
+    typeof body.freshdesk_domain === 'string'
+      ? body.freshdesk_domain.trim() || null
+      : cur.freshdesk_domain;
+  const fdEmail =
+    typeof body.freshdesk_email === 'string' ? body.freshdesk_email.trim() || null : cur.freshdesk_email;
+  const fdGroup =
+    typeof body.freshdesk_group_id === 'string'
+      ? body.freshdesk_group_id.trim() || null
+      : cur.freshdesk_group_id;
   const onCheck = body.on_check_fail === undefined ? cur.on_check_fail : !!body.on_check_fail;
   const onOffline = body.on_offline === undefined ? cur.on_offline : !!body.on_offline;
   const onCrit = body.on_crit_stopped === undefined ? cur.on_crit_stopped : !!body.on_crit_stopped;
@@ -1255,22 +1295,42 @@ app.post('/api/alert-config', async (c) => {
   if (teams && !/^https:\/\//i.test(teams)) {
     return c.json({ error: 'Teams webhook must be an https URL.' }, 400);
   }
+  if (fdGroup && !/^\d+$/.test(fdGroup)) {
+    return c.json({ error: 'Freshdesk group id must be numeric.' }, 400);
+  }
 
   await c.env.DB.prepare(
     `INSERT INTO alert_config
-       (id, teams_webhook_url, email_to, email_from, email_api_key, on_check_fail, on_offline, on_crit_stopped, updated_at)
-     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       (id, teams_webhook_url, email_to, email_from, email_api_key, freshdesk_domain, freshdesk_api_key, freshdesk_email, freshdesk_group_id, on_check_fail, on_offline, on_crit_stopped, updated_at)
+     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
      ON CONFLICT(id) DO UPDATE SET
        teams_webhook_url = excluded.teams_webhook_url,
        email_to = excluded.email_to,
        email_from = excluded.email_from,
        email_api_key = excluded.email_api_key,
+       freshdesk_domain = excluded.freshdesk_domain,
+       freshdesk_api_key = excluded.freshdesk_api_key,
+       freshdesk_email = excluded.freshdesk_email,
+       freshdesk_group_id = excluded.freshdesk_group_id,
        on_check_fail = excluded.on_check_fail,
        on_offline = excluded.on_offline,
        on_crit_stopped = excluded.on_crit_stopped,
        updated_at = excluded.updated_at`
   )
-    .bind(teams, emailTo, emailFrom, emailKey, onCheck ? 1 : 0, onOffline ? 1 : 0, onCrit ? 1 : 0, new Date().toISOString())
+    .bind(
+      teams,
+      emailTo,
+      emailFrom,
+      emailKey,
+      fdDomain,
+      fdKey,
+      fdEmail,
+      fdGroup,
+      onCheck ? 1 : 0,
+      onOffline ? 1 : 0,
+      onCrit ? 1 : 0,
+      new Date().toISOString()
+    )
     .run();
 
   return c.json({ ok: true });
@@ -1281,12 +1341,15 @@ app.post('/api/alert-config/test', async (c) => {
   if (u instanceof Response) return u;
   const cfg = await loadAlertConfig(c.env.DB);
   const emailReady = !!(cfg.email_to && cfg.email_from && cfg.email_api_key);
-  if (!cfg.teams_webhook_url && !emailReady) {
+  const fdReady = freshdeskReady(cfg);
+  if (!cfg.teams_webhook_url && !emailReady && !fdReady) {
     return c.json(
-      { error: 'No channel configured. Add a Teams webhook and/or email settings, then Save first.' },
+      { error: 'No channel configured. Add a Teams webhook, email, or Freshdesk settings, then Save first.' },
       400
     );
   }
+  // Teams/email get a real test message; Freshdesk is only credential-checked
+  // (we don't want a stray test ticket in the helpdesk).
   const r = await deliver(cfg, {
     severity: 'good',
     title: 'MML Dashboard — test alert',
@@ -1295,7 +1358,18 @@ app.post('/api/alert-config/test', async (c) => {
       'If you can see this, alerting is configured correctly.',
     ],
   });
-  return c.json({ ok: r.errors.length === 0, teams: r.teams, email: r.email, errors: r.errors });
+  let freshdesk: boolean | null = null;
+  const errors = [...r.errors];
+  if (fdReady) {
+    try {
+      await freshdeskValidate(cfg);
+      freshdesk = true;
+    } catch (e: any) {
+      freshdesk = false;
+      errors.push(`Freshdesk: ${e?.message || e}`);
+    }
+  }
+  return c.json({ ok: errors.length === 0, teams: r.teams, email: r.email, freshdesk, errors });
 });
 
 // --- utilities ------------------------------------------------------------
