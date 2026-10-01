@@ -22,7 +22,10 @@ export function Sidebar({
 
   const nav = [
     { href: '/', label: 'Dashboard', icon: GridIcon, show: true },
-    { href: '/admin/', label: 'Devices', icon: KeyIcon, show: isAdmin },
+    { href: '/devices/', label: 'Devices', icon: MonitorIcon, show: true },
+    { href: '/checks/', label: 'Weekly Checks', icon: CheckIcon, show: true },
+    { href: '/reports/', label: 'Reports', icon: ReportIcon, show: true },
+    { href: '/admin/', label: 'Admin', icon: KeyIcon, show: isAdmin },
     { href: '/users/', label: 'Users', icon: UsersIcon, show: isAdmin },
     { href: '/account/', label: 'Security', icon: ShieldIcon, show: true },
   ].filter((i) => i.show);
@@ -147,6 +150,31 @@ function GridIcon() {
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+function MonitorIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  );
+}
+function CheckIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+  );
+}
+function ReportIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h2v4H8zM14 11h2v6h-2z" />
     </svg>
   );
 }

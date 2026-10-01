@@ -4,39 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { fetchServers } from '@/lib/api';
-import type { ServerListItem, ServersResponse, ServerStatus } from '@/lib/types';
-import { StatusBadge, StatusDot } from '@/components/StatusBadge';
-import { UsageBar } from '@/components/UsageBar';
-import { relativeAge, formatMb, CHECK_META } from '@/lib/format';
+import type { ServerListItem, ServersResponse, ServerStatus, CheckStatus } from '@/lib/types';
+import { StatusDot } from '@/components/StatusBadge';
+import { ClientLogo } from '@/components/ClientLogo';
+import { relativeAge, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
-
-type ViewMode = 'tile' | 'list';
-const VIEW_STORAGE_KEY = 'mml_server_view';
 
 export default function DashboardPage() {
   const [data, setData] = useState<ServersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
-  const [view, setView] = useState<ViewMode>('tile');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Restore the saved view preference (per browser). Runs after mount to avoid
-  // a hydration mismatch with the static export.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
-      if (saved === 'tile' || saved === 'list') setView(saved);
-    } catch {}
-  }, []);
-
-  const changeView = useCallback((v: ViewMode) => {
-    setView(v);
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, v);
-    } catch {}
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -45,7 +25,7 @@ export default function DashboardPage() {
       setError(null);
       setLastRefresh(Date.now());
     } catch (err: any) {
-      setError(err.message || 'Failed to load devices');
+      setError(err.message || 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }
@@ -60,7 +40,10 @@ export default function DashboardPage() {
   }, [load]);
 
   const servers = data?.servers ?? [];
-  const counts = countByStatus(servers);
+  const status = countBy(servers, (s) => s.status) as Record<ServerStatus, number>;
+  const checks = countChecks(servers);
+  const clients = new Set(servers.map((s) => s.client_name)).size;
+  const attention = servers.filter(needsAttention);
 
   return (
     <div className="px-8 py-6">
@@ -68,17 +51,13 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
           <p className="text-sm text-slate-500">
-            {servers.length} device{servers.length === 1 ? '' : 's'} monitored · auto refresh every{' '}
-            {POLL_MS / 1000}s · last updated {relativeAge(new Date(lastRefresh).toISOString())}
+            Overview · auto refresh every {POLL_MS / 1000}s · last updated{' '}
+            {relativeAge(new Date(lastRefresh).toISOString())}
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <StatusCounts counts={counts} />
-          <ViewToggle view={view} onChange={changeView} />
-          <button onClick={load} className="btn-ghost px-3 py-1.5">
-            Refresh
-          </button>
-        </div>
+        <button onClick={load} className="btn-ghost px-3 py-1.5">
+          Refresh
+        </button>
       </header>
 
       {error && (
@@ -89,341 +68,266 @@ export default function DashboardPage() {
 
       {loading && !data ? (
         <p className="text-sm text-slate-500">Loading…</p>
-      ) : servers.length === 0 ? (
-        <EmptyState />
-      ) : view === 'tile' ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {servers.map((s) => (
-            <ServerCard key={s.id} server={s} />
-          ))}
-        </div>
       ) : (
-        <ServerTable servers={servers} />
+        <>
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <KpiCard
+              label="Devices"
+              value={servers.length}
+              href="/devices/"
+              footer={
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                  {(['online', 'stale', 'offline', 'pending'] as ServerStatus[]).map(
+                    (st) =>
+                      status[st] > 0 && (
+                        <span key={st} className="inline-flex items-center gap-1">
+                          <span className={`h-2 w-2 rounded-full bg-status-${st}`} />
+                          {status[st]} {st}
+                        </span>
+                      )
+                  )}
+                </div>
+              }
+            />
+            <KpiCard
+              label="Online"
+              value={status.online ?? 0}
+              accent="text-status-online"
+              href="/devices/?status=online"
+              footer={<span className="text-xs text-slate-500">of {servers.length} devices</span>}
+            />
+            <KpiCard
+              label="Needs attention"
+              value={attention.length}
+              accent={attention.length ? 'text-status-offline' : 'text-status-online'}
+              href="/devices/?status=offline"
+              footer={
+                <span className="text-xs text-slate-500">
+                  {checks.fail} check {checks.fail === 1 ? 'failure' : 'failures'} · {status.offline ?? 0} offline
+                </span>
+              }
+            />
+            <KpiCard
+              label="Clients"
+              value={clients}
+              footer={<span className="text-xs text-slate-500">distinct companies</span>}
+            />
+          </div>
+
+          {/* Weekly checks + attention */}
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <section className="card p-5 lg:col-span-1">
+              <div className="mb-1 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-800">Weekly checks</h2>
+                <Link href="/checks/" className="text-xs font-medium text-brand-600 hover:underline">
+                  View all
+                </Link>
+              </div>
+              <p className="mb-4 text-xs text-slate-500">Click a segment to see those devices.</p>
+              <WeeklyCheckDonut checks={checks} total={servers.length} />
+            </section>
+
+            <section className="card p-5 lg:col-span-2">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-800">Needs attention</h2>
+                <Link href="/devices/" className="text-xs font-medium text-brand-600 hover:underline">
+                  All devices
+                </Link>
+              </div>
+              {attention.length === 0 ? (
+                <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-6 text-sm text-green-800">
+                  <span className="h-2.5 w-2.5 rounded-full bg-status-online" />
+                  Everything looks healthy — no devices need attention.
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {attention.slice(0, 8).map((s) => (
+                    <AttentionRow key={s.id} server={s} />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode) => void }) {
-  const base = 'flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-colors';
-  const active = 'bg-white text-slate-900 shadow-sm';
-  const inactive = 'text-slate-500 hover:text-slate-700';
-  return (
-    <div className="inline-flex rounded-md border border-slate-300 bg-slate-100 p-0.5" role="group" aria-label="View mode">
-      <button
-        type="button"
-        onClick={() => onChange('tile')}
-        aria-pressed={view === 'tile'}
-        className={`${base} rounded ${view === 'tile' ? active : inactive}`}
-        title="Tile view"
-      >
-        <TileIcon />
-        <span className="hidden sm:inline">Tiles</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange('list')}
-        aria-pressed={view === 'list'}
-        className={`${base} rounded ${view === 'list' ? active : inactive}`}
-        title="List view"
-      >
-        <ListIcon />
-        <span className="hidden sm:inline">List</span>
-      </button>
-    </div>
+function KpiCard({
+  label,
+  value,
+  footer,
+  accent,
+  href,
+}: {
+  label: string;
+  value: number | string;
+  footer?: React.ReactNode;
+  accent?: string;
+  href?: string;
+}) {
+  const inner = (
+    <>
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1 text-3xl font-semibold tabular-nums ${accent ?? 'text-slate-900'}`}>
+        {value}
+      </div>
+      {footer && <div className="mt-2">{footer}</div>}
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href} className="card card-hover block p-4">
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="card p-4">{inner}</div>;
 }
 
-function ServerTable({ servers }: { servers: ServerListItem[] }) {
+function AttentionRow({ server }: { server: ServerListItem }) {
+  const reasons: { label: string; cls: string }[] = [];
+  if (server.status === 'offline') reasons.push({ label: 'Offline', cls: 'text-status-offline' });
+  else if (server.status === 'stale') reasons.push({ label: 'Stale', cls: 'text-status-stale' });
+  if (server.latest_check?.overall_status === 'fail')
+    reasons.push({ label: 'Check failed', cls: 'text-status-offline' });
+  else if (server.latest_check?.overall_status === 'warn')
+    reasons.push({ label: 'Check warning', cls: 'text-status-stale' });
+  const stopped = server.latest?.services?.stopped_critical?.length ?? 0;
+  if (stopped > 0) reasons.push({ label: `${stopped} critical stopped`, cls: 'text-status-offline' });
+
   return (
-    <div className="card overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="panel-header border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-            <th className="px-4 py-2.5">Device</th>
-            <th className="px-4 py-2.5">Status</th>
-            <th className="px-4 py-2.5">CPU</th>
-            <th className="px-4 py-2.5">RAM</th>
-            <th className="px-4 py-2.5">Disk</th>
-            <th className="px-4 py-2.5">Weekly check</th>
-            <th className="px-4 py-2.5">Last seen</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {servers.map((s) => (
-            <ServerRow key={s.id} server={s} />
+    <li>
+      <Link
+        href={`/server/?id=${encodeURIComponent(server.id)}`}
+        className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 hover:bg-slate-50"
+      >
+        <ClientLogo client={server.client_name} size={30} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-slate-900">{server.name}</div>
+          <div className="truncate text-xs text-slate-500">{server.client_name}</div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-xs font-medium">
+          {reasons.map((r, i) => (
+            <span key={i} className={r.cls}>
+              {r.label}
+            </span>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </div>
+        <span className="ml-1 whitespace-nowrap text-xs text-slate-400">
+          {relativeAge(server.last_seen_at)}
+        </span>
+      </Link>
+    </li>
   );
 }
 
-function ServerRow({ server }: { server: ServerListItem }) {
+// Clickable SVG donut of weekly-check results. Segments route to the Devices
+// page filtered by that result.
+function WeeklyCheckDonut({
+  checks,
+  total,
+}: {
+  checks: Record<CheckStatus | 'none', number>;
+  total: number;
+}) {
   const router = useRouter();
-  const href = `/server/?id=${encodeURIComponent(server.id)}`;
-  const latest = server.latest;
-  const ramPercent =
-    latest && latest.ram_total_mb ? ((latest.ram_used_mb ?? 0) / latest.ram_total_mb) * 100 : null;
-  const worstDisk = worstDiskUsedPercent(latest?.disk ?? []);
-  const stoppedCritical = latest?.services?.stopped_critical ?? [];
-
-  return (
-    <tr
-      onClick={() => router.push(href)}
-      className="cursor-pointer hover:bg-slate-50"
-    >
-      <td className="px-4 py-3 align-middle">
-        <Link
-          href={href}
-          onClick={(e) => e.stopPropagation()}
-          className="font-medium text-slate-900 hover:text-brand-600"
-        >
-          {server.name}
-        </Link>
-        <div className="truncate text-xs text-slate-500">
-          {server.client_name}
-          {server.location ? ` · ${server.location}` : ''}
-        </div>
-        {stoppedCritical.length > 0 && (
-          <div className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-status-offline">
-            <WarnIcon />
-            {stoppedCritical.length} critical stopped
-          </div>
-        )}
-      </td>
-      <td className="px-4 py-3 align-middle">
-        {server.desired_state === 'decommission' ? (
-          <span className="inline-flex items-center whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-            Decommissioning
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <StatusDot status={server.status} />
-            <span className="text-slate-600">{cap(server.status)}</span>
-          </span>
-        )}
-      </td>
-      <td className="px-4 py-3 align-middle">
-        <MetricText percent={latest?.cpu_percent ?? null} />
-      </td>
-      <td className="px-4 py-3 align-middle">
-        <MetricText
-          percent={ramPercent}
-          sublabel={
-            latest && latest.ram_total_mb
-              ? `${formatMb(latest.ram_used_mb)} / ${formatMb(latest.ram_total_mb)}`
-              : undefined
-          }
-        />
-      </td>
-      <td className="px-4 py-3 align-middle">
-        <MetricText
-          percent={worstDisk?.percent ?? null}
-          sublabel={worstDisk ? worstDisk.mount : undefined}
-        />
-      </td>
-      <td className="px-4 py-3 align-middle">
-        {server.latest_check ? (
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <span className={`h-2 w-2 rounded-full ${CHECK_META[server.latest_check.overall_status].dot}`} />
-            <span className="text-slate-600">
-              {CHECK_META[server.latest_check.overall_status].label}
-              {server.latest_check.fail_count + server.latest_check.warn_count > 0
-                ? ` (${server.latest_check.fail_count}f ${server.latest_check.warn_count}w)`
-                : ''}
-            </span>
-          </span>
-        ) : (
-          <span className="text-slate-400">—</span>
-        )}
-      </td>
-      <td className="whitespace-nowrap px-4 py-3 align-middle text-slate-500">
-        {relativeAge(server.last_seen_at)}
-      </td>
-    </tr>
-  );
-}
-
-// Compact metric cell for the list view: a percentage coloured by severity,
-// with an optional small sublabel underneath.
-function MetricText({ percent, sublabel }: { percent: number | null; sublabel?: string }) {
-  if (percent == null) return <span className="text-slate-400">n/a</span>;
-  const rounded = Math.round(percent);
-  const color = rounded >= 90 ? 'text-status-offline' : rounded >= 75 ? 'text-status-stale' : 'text-slate-700';
-  return (
-    <div className="whitespace-nowrap">
-      <span className={`font-medium tabular-nums ${color}`}>{rounded}%</span>
-      {sublabel && <div className="text-xs text-slate-400">{sublabel}</div>}
-    </div>
-  );
-}
-
-function cap(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function TileIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
-    </svg>
-  );
-}
-
-function ListIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="8" y1="6" x2="21" y2="6" />
-      <line x1="8" y1="12" x2="21" y2="12" />
-      <line x1="8" y1="18" x2="21" y2="18" />
-      <line x1="3" y1="6" x2="3.01" y2="6" />
-      <line x1="3" y1="12" x2="3.01" y2="12" />
-      <line x1="3" y1="18" x2="3.01" y2="18" />
-    </svg>
-  );
-}
-
-function ServerCard({ server }: { server: ServerListItem }) {
-  const latest = server.latest;
-  const ramPercent =
-    latest && latest.ram_total_mb
-      ? ((latest.ram_used_mb ?? 0) / latest.ram_total_mb) * 100
-      : null;
-  const stoppedCritical = latest?.services?.stopped_critical ?? [];
-  const worstDisk = worstDiskUsedPercent(latest?.disk ?? []);
-
-  return (
-    <Link
-      href={`/server/?id=${encodeURIComponent(server.id)}`}
-      className="card card-hover block p-4"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-slate-900">{server.name}</div>
-          <div className="truncate text-sm text-slate-500">
-            {server.client_name}
-            {server.location ? ` · ${server.location}` : ''}
-          </div>
-        </div>
-        {server.desired_state === 'decommission' ? (
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
-            Decommissioning
-          </span>
-        ) : (
-          <StatusBadge status={server.status} />
-        )}
-      </div>
-
-      <div className="mt-4 space-y-3">
-        <UsageBar
-          percent={latest?.cpu_percent ?? null}
-          label="CPU"
-          sublabel={latest?.cpu_percent != null ? `${latest.cpu_percent}%` : 'n/a'}
-        />
-        <UsageBar
-          percent={ramPercent}
-          label="RAM"
-          sublabel={
-            latest && latest.ram_total_mb
-              ? `${formatMb(latest.ram_used_mb)} / ${formatMb(latest.ram_total_mb)}`
-              : 'n/a'
-          }
-        />
-        <UsageBar
-          percent={worstDisk?.percent ?? null}
-          label={worstDisk ? `Disk ${worstDisk.mount}` : 'Disk'}
-          sublabel={worstDisk ? `${worstDisk.percent}% used` : 'n/a'}
-        />
-      </div>
-
-      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>Last seen {relativeAge(server.last_seen_at)}</span>
-        {stoppedCritical.length > 0 && (
-          <span className="inline-flex items-center gap-1 font-medium text-status-offline">
-            <WarnIcon />
-            {stoppedCritical.length} critical stopped
-          </span>
-        )}
-      </div>
-
-      <div className="mt-2 flex items-center gap-1.5 border-t border-slate-100 pt-2 text-xs text-slate-500">
-        {server.latest_check ? (
-          <>
-            <span className={`h-2 w-2 rounded-full ${CHECK_META[server.latest_check.overall_status].dot}`} />
-            <span>
-              Weekly check: {CHECK_META[server.latest_check.overall_status].label}
-              {server.latest_check.fail_count + server.latest_check.warn_count > 0
-                ? ` (${server.latest_check.fail_count} fail, ${server.latest_check.warn_count} warn)`
-                : ''}
-            </span>
-            <span className="ml-auto">{relativeAge(server.latest_check.run_at)}</span>
-          </>
-        ) : (
-          <span className="text-slate-400">No weekly check yet</span>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-function StatusCounts({ counts }: { counts: Record<ServerStatus, number> }) {
-  const items: { status: ServerStatus; label: string }[] = [
-    { status: 'online', label: 'Online' },
-    { status: 'stale', label: 'Stale' },
-    { status: 'offline', label: 'Offline' },
-    { status: 'pending', label: 'Pending' },
+  const segs: { key: CheckStatus | 'none'; label: string; value: number; color: string }[] = [
+    { key: 'pass', label: 'Pass', value: checks.pass, color: '#16a34a' },
+    { key: 'warn', label: 'Warn', value: checks.warn, color: '#d97706' },
+    { key: 'fail', label: 'Fail', value: checks.fail, color: '#dc2626' },
+    { key: 'none', label: 'No check yet', value: checks.none, color: '#94a3b8' },
   ];
+  const sum = segs.reduce((a, s) => a + s.value, 0);
+
+  const size = 180;
+  const stroke = 22;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  let offset = 0;
+
   return (
-    <div className="flex items-center gap-3 text-sm">
-      {items.map(
-        (i) =>
-          counts[i.status] > 0 && (
-            <span key={i.status} className="inline-flex items-center gap-1.5">
-              <span className={`h-2.5 w-2.5 rounded-full bg-status-${i.status}`} />
-              <span className="tabular-nums text-slate-600">{counts[i.status]}</span>
-            </span>
-          )
-      )}
+    <div className="flex items-center gap-5">
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#eef2f7" strokeWidth={stroke} />
+            {sum > 0 &&
+              segs.map((s) => {
+                if (s.value === 0) return null;
+                const len = (s.value / sum) * c;
+                const el = (
+                  <circle
+                    key={s.key}
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={r}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth={stroke}
+                    strokeDasharray={`${len} ${c - len}`}
+                    strokeDashoffset={-offset}
+                    className="cursor-pointer transition-[opacity] hover:opacity-80"
+                    onClick={() => router.push(`/devices/?check=${s.key}`)}
+                  >
+                    <title>
+                      {s.label}: {s.value}
+                    </title>
+                  </circle>
+                );
+                offset += len;
+                return el;
+              })}
+          </g>
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <div className="text-2xl font-semibold tabular-nums text-slate-900">{total}</div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">devices</div>
+        </div>
+      </div>
+
+      <ul className="flex-1 space-y-1.5 text-sm">
+        {segs.map((s) => (
+          <li key={s.key}>
+            <Link
+              href={`/devices/?check=${s.key}`}
+              className="-mx-1.5 flex items-center gap-2 rounded px-1.5 py-1 hover:bg-slate-50"
+            >
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+              <span className="text-slate-600">{s.label}</span>
+              <span className="ml-auto font-medium tabular-nums text-slate-900">{s.value}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-function EmptyState() {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
-      <p className="text-slate-600">No devices yet.</p>
-      <p className="mt-1 text-sm text-slate-500">
-        Add your first device on the{' '}
-        <Link href="/admin/" className="font-medium text-brand-600 hover:underline">
-          Devices page
-        </Link>{' '}
-        to generate its API key.
-      </p>
-    </div>
-  );
+function countBy<T>(items: T[], key: (t: T) => string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const it of items) {
+    const k = key(it);
+    out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
 }
 
-function countByStatus(servers: ServerListItem[]): Record<ServerStatus, number> {
-  const c: Record<ServerStatus, number> = { online: 0, stale: 0, offline: 0, pending: 0 };
-  for (const s of servers) c[s.status]++;
-  return c;
+function countChecks(servers: ServerListItem[]): Record<CheckStatus | 'none', number> {
+  const out: Record<CheckStatus | 'none', number> = { pass: 0, warn: 0, fail: 0, none: 0 };
+  for (const s of servers) {
+    if (!s.latest_check) out.none++;
+    else out[s.latest_check.overall_status]++;
+  }
+  return out;
 }
 
-function worstDiskUsedPercent(disks: { mount: string; free_percent: number }[]) {
-  if (!disks.length) return null;
-  let worst = disks[0];
-  for (const d of disks) if (d.free_percent < worst.free_percent) worst = d;
-  return { mount: worst.mount, percent: Math.round(100 - worst.free_percent) };
-}
-
-function WarnIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-    </svg>
-  );
+function needsAttention(s: ServerListItem): boolean {
+  if (s.status === 'offline' || s.status === 'stale') return true;
+  if (s.latest_check && (s.latest_check.overall_status === 'fail' || s.latest_check.overall_status === 'warn'))
+    return true;
+  if ((s.latest?.services?.stopped_critical?.length ?? 0) > 0) return true;
+  return false;
 }
