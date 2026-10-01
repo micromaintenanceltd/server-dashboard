@@ -106,13 +106,21 @@ function AddUserForm({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('tech');
+  const [sendInvite, setSendInvite] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<
+    { email: string; password: string; emailed: boolean; emailError: string | null } | null
+  >(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setResult(null);
+    const theEmail = email.trim();
+    const thePassword = password;
     try {
-      await createUser({ email: email.trim(), role, password });
+      const r = await createUser({ email: theEmail, role, password: thePassword, send_invite: sendInvite });
+      setResult({ email: theEmail, password: thePassword, emailed: r.emailed, emailError: r.email_error });
       setEmail('');
       setPassword('');
       setRole('tech');
@@ -122,6 +130,13 @@ function AddUserForm({
     } finally {
       setBusy(false);
     }
+  }
+
+  function generate() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const arr = new Uint32Array(16);
+    crypto.getRandomValues(arr);
+    setPassword(Array.from(arr, (n) => chars[n % chars.length]).join(''));
   }
 
   return (
@@ -141,14 +156,19 @@ function AddUserForm({
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-slate-500">Temporary password</span>
-          <input
-            type="text"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="min 10 characters"
-            className="w-48 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-            required
-          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="min 10 characters"
+              className="w-48 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              required
+            />
+            <button type="button" onClick={generate} className="btn-ghost px-2.5 py-1.5 text-xs">
+              Generate
+            </button>
+          </div>
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-slate-500">Role</span>
@@ -169,8 +189,38 @@ function AddUserForm({
           {busy ? 'Adding...' : 'Add user'}
         </button>
       </form>
+
+      <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} />
+        Email the user an invite with the dashboard link and their temporary password
+      </label>
+
+      {result && (
+        <div
+          className={`mt-3 rounded-md border px-4 py-3 text-sm ${
+            result.emailed
+              ? 'border-green-200 bg-green-50 text-green-800'
+              : 'border-amber-200 bg-amber-50 text-amber-800'
+          }`}
+        >
+          {result.emailed ? (
+            <>Invite emailed to <strong>{result.email}</strong>.</>
+          ) : (
+            <>
+              User created
+              {result.emailError ? `, but the invite wasn't emailed (${result.emailError})` : ''}. Share
+              these details manually:
+              <div className="mt-1 font-mono text-xs text-slate-700">
+                {result.email} · {result.password}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <p className="mt-2 text-xs text-slate-500">
-        Give the person the temporary password; they can change it and set up MFA on the Security page.
+        Invite emails need email configured under <strong>Admin → Alerts</strong> (From address + Resend
+        key). The user should change their password and set up MFA on the Security page.
       </p>
     </section>
   );

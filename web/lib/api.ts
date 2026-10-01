@@ -128,7 +128,8 @@ export async function createUser(input: {
   email: string;
   role: UserRole;
   password: string;
-}): Promise<{ ok: boolean }> {
+  send_invite?: boolean;
+}): Promise<{ ok: boolean; emailed: boolean; email_error: string | null }> {
   return request('/api/users', { method: 'POST', body: input });
 }
 export async function setUserRole(id: string, role: UserRole): Promise<{ ok: boolean }> {

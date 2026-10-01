@@ -29,6 +29,9 @@ import {
   evaluateAlert,
   freshdeskReady,
   freshdeskValidate,
+  canSendEmail,
+  resendSend,
+  esc,
 } from './alerts';
 
 // Re-export the Durable Object classes so the runtime can find them.
@@ -552,8 +555,49 @@ app.post('/api/users', async (c) => {
   )
     .bind(id, email, hash, role, new Date().toISOString())
     .run();
-  return c.json({ ok: true, user: { id, email, role } }, 201);
+
+  // Email the new user an invite with the dashboard link and their temporary
+  // login details (best-effort; falls back to the admin sharing them manually).
+  // The dashboard URL is the origin the admin is creating them from.
+  let emailed = false;
+  let emailError: string | null = null;
+  const sendInvite = body.send_invite !== false; // default on
+  if (sendInvite) {
+    try {
+      const cfg = await loadAlertConfig(c.env.DB);
+      if (!canSendEmail(cfg)) {
+        emailError = 'Email is not configured (set From + Resend key under Alerts).';
+      } else {
+        const origin = (c.req.header('origin') || '').replace(/\/+$/, '');
+        const loginUrl = origin ? `${origin}/login/` : '';
+        await resendSend(cfg, [email], 'Your MML Dashboard account', inviteHtml(loginUrl, email, password, role));
+        emailed = true;
+      }
+    } catch (e: any) {
+      emailError = e?.message || 'Email failed to send.';
+    }
+  }
+
+  return c.json({ ok: true, user: { id, email, role }, emailed, email_error: emailError }, 201);
 });
+
+function inviteHtml(loginUrl: string, email: string, tempPassword: string, role: UserRole): string {
+  const linkLine = loginUrl
+    ? `<p>Sign in here: <a href="${esc(loginUrl)}">${esc(loginUrl)}</a></p>`
+    : `<p>Sign in at your MML dashboard URL.</p>`;
+  return (
+    `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;color:#0f172a">` +
+    `<h2 style="margin:0 0 10px">MML Dashboard — your account</h2>` +
+    `<p>An administrator has created a ${esc(role === 'admin' ? 'administrator' : 'technician')} account for you on the Micro Maintenance monitoring dashboard.</p>` +
+    linkLine +
+    `<p style="margin:14px 0;padding:12px 14px;background:#f1f5f9;border-radius:8px">` +
+    `<strong>Email:</strong> ${esc(email)}<br/>` +
+    `<strong>Temporary password:</strong> ${esc(tempPassword)}</p>` +
+    `<p>Please sign in and change your password straight away (Security page), and set up two-factor authentication.</p>` +
+    `<p style="color:#64748b;font-size:12px">If you weren't expecting this, you can ignore this email.</p>` +
+    `</div>`
+  );
+}
 
 app.post('/api/users/:id/role', async (c) => {
   const guard = await requireAdmin(c);

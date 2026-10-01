@@ -217,18 +217,35 @@ async function sendEmail(cfg: AlertConfig, msg: AlertMessage): Promise<void> {
   const html =
     `<h3 style="margin:0 0 8px">${esc(msg.title)}</h3>` +
     msg.lines.map((l) => `<p style="margin:0 0 6px">${esc(l)}</p>`).join('');
+  await resendSend(cfg, to, msg.title, html);
+}
+
+// Whether an outbound (non-alert) email can be sent — needs a from-address and
+// a Resend API key (recipients are supplied per message).
+export function canSendEmail(cfg: AlertConfig): boolean {
+  return !!(cfg.email_from && cfg.email_api_key);
+}
+
+// Low-level Resend send used for both alerts and transactional mail (e.g. user
+// invites). Throws on failure.
+export async function resendSend(
+  cfg: AlertConfig,
+  to: string[],
+  subject: string,
+  html: string
+): Promise<void> {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${cfg.email_api_key}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ from: cfg.email_from, to, subject: msg.title, html }),
+    body: JSON.stringify({ from: cfg.email_from, to, subject, html }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
