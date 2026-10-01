@@ -78,6 +78,7 @@ async function freshdeskCreate(cfg: AlertConfig, msg: AlertMessage): Promise<str
     subject: msg.title,
     description: msg.lines.map((l) => `<div>${esc(l)}</div>`).join(''),
     email: cfg.freshdesk_email,
+    type: 'Incident', // some accounts make ticket Type mandatory
     priority: 3, // high
     status: 2, // open
   };
@@ -117,6 +118,7 @@ export async function freshdeskTestTicket(cfg: AlertConfig): Promise<string> {
     description:
       '<div>This is a test ticket from the MML dashboard to confirm Freshdesk alerting works.</div><div>You can close or delete it.</div>',
     email: cfg.freshdesk_email,
+    type: 'Incident', // some accounts make ticket Type mandatory
     priority: 1, // low
     status: 2, // open
   };
