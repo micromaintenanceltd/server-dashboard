@@ -9,9 +9,10 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import type { Env, ReportPayload, ServerRow, ServerStatus, CheckRunPayload } from './types';
 import { generateApiKey, hashApiKey, keyPrefix } from './crypto';
-import { hashPassword, verifyPassword, signJwt, verifyJwt } from './auth/crypto';
+import { hashPassword, verifyPassword, signJwt, verifyJwt, timingSafeEqual } from './auth/crypto';
 import { generateTotpSecret, otpauthUri, verifyTotp } from './auth/totp';
 import {
   USERS_SCHEMA,
@@ -69,7 +70,42 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
+// Cap request bodies on the agent-facing ingest endpoints so a holder of a
+// per-server key cannot exhaust storage/CPU with huge payloads.
+app.use(
+  '/api/report',
+  bodyLimit({ maxSize: 128 * 1024, onError: (c) => c.json({ error: 'Report too large.' }, 413) })
+);
+app.use(
+  '/api/checks',
+  bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: 'Payload too large.' }, 413) })
+);
+
 // --- Helpers --------------------------------------------------------------
+
+const textEncoder = new TextEncoder();
+
+// Constant-time comparison of two secret strings (avoids a byte-by-byte timing
+// side channel when checking the enrollment / bootstrap tokens).
+function secretEquals(a: string, b: string): boolean {
+  return timingSafeEqual(textEncoder.encode(a), textEncoder.encode(b));
+}
+
+// Per-IP fixed-window throttle, reusing the EnrollLimiter DO under a distinct
+// key. Returns true when the caller has exceeded the window. Never throws - a
+// limiter failure must not lock people out.
+async function rateLimited(c: any, bucket: string): Promise<boolean> {
+  try {
+    const ip =
+      c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+    const id = c.env.ENROLL_LIMITER.idFromName(`${bucket}:${ip}`);
+    const r = await c.env.ENROLL_LIMITER.get(id).fetch('https://limiter/');
+    const j: any = await r.json();
+    return j && j.allowed === false;
+  } catch {
+    return false;
+  }
+}
 
 function staleMinutes(env: Env): number {
   const n = parseInt(env.STALE_AFTER_MINUTES || '15', 10);
@@ -214,7 +250,7 @@ app.post('/api/auth/setup', async (c) => {
     return c.json({ error: 'Setup already completed.' }, 409);
   }
   const token = (c.req.header('Authorization') || '').replace(/^Bearer /, '');
-  if (!c.env.BOOTSTRAP_TOKEN || token !== c.env.BOOTSTRAP_TOKEN) {
+  if (!c.env.BOOTSTRAP_TOKEN || !secretEquals(token, c.env.BOOTSTRAP_TOKEN)) {
     return c.json({ error: 'Invalid bootstrap token.' }, 401);
   }
   let body: any;
@@ -241,6 +277,9 @@ app.post('/api/auth/setup', async (c) => {
 
 // --- POST /api/auth/login : password step ---------------------------------
 app.post('/api/auth/login', async (c) => {
+  if (await rateLimited(c, 'login')) {
+    return c.json({ error: 'Too many attempts. Please wait a minute and try again.' }, 429);
+  }
   let body: any;
   try {
     body = await c.req.json();
@@ -298,6 +337,9 @@ app.post('/api/auth/login', async (c) => {
 
 // --- POST /api/auth/mfa/verify : TOTP or recovery code --------------------
 app.post('/api/auth/mfa/verify', async (c) => {
+  if (await rateLimited(c, 'mfa')) {
+    return c.json({ error: 'Too many attempts. Please wait a minute and try again.' }, 429);
+  }
   let body: any;
   try {
     body = await c.req.json();
@@ -664,7 +706,7 @@ app.delete('/api/self', async (c) => {
 app.post('/api/enroll', async (c) => {
   const auth = c.req.header('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!c.env.ENROLL_TOKEN || token !== c.env.ENROLL_TOKEN) {
+  if (!c.env.ENROLL_TOKEN || !secretEquals(token, c.env.ENROLL_TOKEN)) {
     return c.json({ error: 'Invalid enrollment token.' }, 401);
   }
 
@@ -766,6 +808,9 @@ app.post('/api/checks', async (c) => {
   const results = Array.isArray(payload.results) ? payload.results : [];
   if (results.length === 0) {
     return c.json({ error: 'results array is required.' }, 400);
+  }
+  if (results.length > 200) {
+    return c.json({ error: 'Too many check results (max 200).' }, 413);
   }
 
   // Count statuses and derive the overall result: any fail -> fail, else any
