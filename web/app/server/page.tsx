@@ -31,7 +31,7 @@ function ServerDetailInner() {
 
   const load = useCallback(async () => {
     if (!id) {
-      setError('No server id provided.');
+      setError('No device id provided.');
       setLoading(false);
       return;
     }
@@ -40,7 +40,7 @@ function ServerDetailInner() {
       setData(res);
       setError(null);
     } catch (err: any) {
-      setError(err.message || 'Failed to load server');
+      setError(err.message || 'Failed to load device');
     } finally {
       setLoading(false);
     }
@@ -377,7 +377,7 @@ function WeeklyChecks({
 
 function MetricCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{title}</div>
       <div className="mt-2">{children}</div>
     </div>
@@ -386,7 +386,7 @@ function MetricCard({ title, children }: { title: string; children: React.ReactN
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card p-4">
       <h2 className="mb-3 text-sm font-semibold text-slate-700">{title}</h2>
       {children}
     </div>
@@ -408,7 +408,7 @@ function KeyVals({ rows }: { rows: [string, string][] }) {
 
 function BackLink() {
   return (
-    <Link href="/" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+    <Link href="/" className="inline-flex items-center gap-1 text-sm text-brand-600 hover:underline">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M15 18l-6-6 6-6" />
       </svg>

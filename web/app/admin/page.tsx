@@ -26,7 +26,7 @@ export default function AdminPage() {
       setServers(res.servers);
       setError(null);
     } catch (err: any) {
-      setError(err.message || 'Failed to load servers');
+      setError(err.message || 'Failed to load devices');
     } finally {
       setLoading(false);
     }
@@ -39,8 +39,8 @@ export default function AdminPage() {
   return (
     <div className="px-8 py-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Servers admin</h1>
-        <p className="text-sm text-slate-500">Provision servers and manage their API keys.</p>
+        <h1 className="text-2xl font-semibold text-slate-900">Devices</h1>
+        <p className="text-sm text-slate-500">Provision devices and manage their API keys.</p>
       </header>
 
       {error && (
@@ -63,15 +63,15 @@ export default function AdminPage() {
         onError={setError}
       />
 
-      {/* Servers table */}
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
-          Servers ({servers.length})
+      {/* Devices table */}
+      <section className="card overflow-hidden">
+        <div className="panel-header border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+          Devices ({servers.length})
         </div>
         {loading ? (
           <p className="px-4 py-6 text-sm text-slate-500">Loading...</p>
         ) : servers.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-slate-500">No servers yet. Add one above.</p>
+          <p className="px-4 py-6 text-sm text-slate-500">No devices yet. Add one above.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -135,17 +135,17 @@ function AddServerForm({
       setClient('');
       setLocation('');
     } catch (err: any) {
-      onError(err.message || 'Failed to create server');
+      onError(err.message || 'Failed to create device');
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-slate-700">Add server</h2>
+    <section className="card mb-6 p-4">
+      <h2 className="mb-3 text-sm font-semibold text-slate-700">Add device</h2>
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        <Field label="Server name" value={name} onChange={setName} placeholder="DC01" />
+        <Field label="Device name" value={name} onChange={setName} placeholder="DC01" />
         <Field label="Client" value={client} onChange={setClient} placeholder="Acme Ltd" />
         <Field
           label="Location (optional)"
@@ -156,7 +156,7 @@ function AddServerForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {busy ? 'Creating...' : 'Create + generate key'}
         </button>
@@ -204,7 +204,7 @@ function ServerRow({
       await decommissionServer(server.id);
       onDeleted();
     } catch (err: any) {
-      onError(err.message || 'Failed to decommission server');
+      onError(err.message || 'Failed to decommission device');
     } finally {
       setBusy(false);
     }
@@ -214,7 +214,7 @@ function ServerRow({
     if (
       !confirm(
         `Force-remove ${server.name} now? This deletes the record and all history immediately. ` +
-          `Use this only if the server is already gone; any agent still installed will not be uninstalled.`
+          `Use this only if the device is already gone; any agent still installed will not be uninstalled.`
       )
     )
       return;
@@ -223,7 +223,7 @@ function ServerRow({
       await deleteServer(server.id);
       onDeleted();
     } catch (err: any) {
-      onError(err.message || 'Failed to remove server');
+      onError(err.message || 'Failed to remove device');
     } finally {
       setBusy(false);
     }
@@ -310,7 +310,7 @@ function IssuedKeyCallout({
           <h2 className="text-sm font-semibold text-amber-900">API key for {name}</h2>
           <p className="mt-0.5 text-xs text-amber-800">
             Copy this now. It is shown once and cannot be retrieved later. Paste it into that
-            server&apos;s agent config.json as the apiKey.
+            device&apos;s agent config.json as the apiKey.
           </p>
         </div>
         <button onClick={onClose} className="text-xs font-medium text-amber-800 hover:underline">

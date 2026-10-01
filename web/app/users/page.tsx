@@ -60,7 +60,7 @@ export default function UsersPage() {
 
       <AddUserForm onCreated={load} onError={setError} />
 
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <section className="card">
         <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
           Accounts ({users.length})
         </div>
@@ -125,7 +125,7 @@ function AddUserForm({
   }
 
   return (
-    <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="mb-6 card p-4">
       <h2 className="mb-3 text-sm font-semibold text-slate-700">Add user</h2>
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
@@ -164,7 +164,7 @@ function AddUserForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {busy ? 'Adding...' : 'Add user'}
         </button>
@@ -225,7 +225,7 @@ function UserRow({
       <td className="px-4 py-2">
         <span
           className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-            u.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
+            u.role === 'admin' ? 'bg-brand-100 text-brand-800' : 'bg-slate-100 text-slate-600'
           }`}
         >
           {u.role}

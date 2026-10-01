@@ -11,19 +11,21 @@ export function Sidebar({ user, onSignOut }: { user: AuthUser; onSignOut: () => 
 
   const nav = [
     { href: '/', label: 'Dashboard', icon: GridIcon, show: true },
-    { href: '/admin/', label: 'Servers admin', icon: KeyIcon, show: isAdmin },
+    { href: '/admin/', label: 'Devices', icon: KeyIcon, show: isAdmin },
     { href: '/users/', label: 'Users', icon: UsersIcon, show: isAdmin },
     { href: '/account/', label: 'Security', icon: ShieldIcon, show: true },
   ].filter((i) => i.show);
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 flex w-60 flex-col bg-sidebar text-slate-200">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 font-bold text-white">
-          MML
-        </div>
+    <aside
+      className="fixed inset-y-0 left-0 z-20 flex w-60 flex-col text-slate-200 shadow-xl"
+      style={{ backgroundImage: 'linear-gradient(180deg, #0a2440 0%, #0b1526 100%)' }}
+    >
+      <div className="flex items-center gap-3 px-5 py-5">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="Micro Maintenance" className="brand-chip h-10 w-10 p-1.5" />
         <div className="leading-tight">
-          <div className="text-sm font-semibold text-white">Server Dashboard</div>
+          <div className="text-sm font-semibold text-white">Dashboard</div>
           <div className="text-xs text-slate-400">Micro Maintenance</div>
         </div>
       </div>
@@ -39,8 +41,10 @@ export function Sidebar({ user, onSignOut }: { user: AuthUser; onSignOut: () => 
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-                active ? 'bg-sidebar-active text-white' : 'text-slate-300 hover:bg-sidebar-hover'
+              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-white/10 text-white shadow-[inset_3px_0_0_0_#0070c0]'
+                  : 'text-slate-300 hover:bg-white/5 hover:text-white'
               }`}
             >
               <Icon />
@@ -50,14 +54,14 @@ export function Sidebar({ user, onSignOut }: { user: AuthUser; onSignOut: () => 
         })}
       </nav>
 
-      <div className="border-t border-slate-700/60 px-4 py-4">
+      <div className="border-t border-white/10 px-4 py-4">
         <div className="mb-2 truncate text-xs text-slate-400" title={user.email}>
           {user.email}
         </div>
         <div className="mb-3 flex items-center gap-2">
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-              isAdmin ? 'bg-blue-600 text-white' : 'bg-slate-600 text-slate-100'
+              isAdmin ? 'bg-brand-600 text-white' : 'bg-slate-600 text-slate-100'
             }`}
           >
             {isAdmin ? 'Admin' : 'Technician'}

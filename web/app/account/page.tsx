@@ -52,7 +52,7 @@ function PasswordCard() {
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="card p-5">
       <h2 className="mb-3 text-sm font-semibold text-slate-700">Change password</h2>
       {msg && (
         <div
@@ -141,7 +141,7 @@ function MfaCard({ mfaEnabled, email }: { mfaEnabled: boolean; email: string }) 
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="card p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-700">Two-factor authentication</h2>
         <span
@@ -183,7 +183,7 @@ function MfaCard({ mfaEnabled, email }: { mfaEnabled: boolean; email: string }) 
           <button
             onClick={startSetup}
             disabled={busy}
-            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             {busy ? 'Preparing...' : 'Set up MFA'}
           </button>
@@ -210,7 +210,7 @@ function MfaCard({ mfaEnabled, email }: { mfaEnabled: boolean; email: string }) 
             <button
               type="submit"
               disabled={busy}
-              className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {busy ? 'Verifying...' : 'Verify and enable'}
             </button>

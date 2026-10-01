@@ -45,7 +45,7 @@ export default function DashboardPage() {
       setError(null);
       setLastRefresh(Date.now());
     } catch (err: any) {
-      setError(err.message || 'Failed to load servers');
+      setError(err.message || 'Failed to load devices');
     } finally {
       setLoading(false);
     }
@@ -66,19 +66,16 @@ export default function DashboardPage() {
     <div className="px-8 py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Servers</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
           <p className="text-sm text-slate-500">
-            {servers.length} monitored · auto refresh every {POLL_MS / 1000}s · last updated{' '}
-            {relativeAge(new Date(lastRefresh).toISOString())}
+            {servers.length} device{servers.length === 1 ? '' : 's'} monitored · auto refresh every{' '}
+            {POLL_MS / 1000}s · last updated {relativeAge(new Date(lastRefresh).toISOString())}
           </p>
         </div>
         <div className="flex items-center gap-4">
           <StatusCounts counts={counts} />
           <ViewToggle view={view} onChange={changeView} />
-          <button
-            onClick={load}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
+          <button onClick={load} className="btn-ghost px-3 py-1.5">
             Refresh
           </button>
         </div>
@@ -91,7 +88,7 @@ export default function DashboardPage() {
       )}
 
       {loading && !data ? (
-        <p className="text-sm text-slate-500">Loading servers...</p>
+        <p className="text-sm text-slate-500">Loading…</p>
       ) : servers.length === 0 ? (
         <EmptyState />
       ) : view === 'tile' ? (
@@ -139,11 +136,11 @@ function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode
 
 function ServerTable({ servers }: { servers: ServerListItem[] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="card overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-            <th className="px-4 py-2.5">Server</th>
+          <tr className="panel-header border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+            <th className="px-4 py-2.5">Device</th>
             <th className="px-4 py-2.5">Status</th>
             <th className="px-4 py-2.5">CPU</th>
             <th className="px-4 py-2.5">RAM</th>
@@ -180,7 +177,7 @@ function ServerRow({ server }: { server: ServerListItem }) {
         <Link
           href={href}
           onClick={(e) => e.stopPropagation()}
-          className="font-medium text-slate-900 hover:text-blue-600"
+          className="font-medium text-slate-900 hover:text-brand-600"
         >
           {server.name}
         </Link>
@@ -302,7 +299,7 @@ function ServerCard({ server }: { server: ServerListItem }) {
   return (
     <Link
       href={`/server/?id=${encodeURIComponent(server.id)}`}
-      className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+      className="card card-hover block p-4"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -397,12 +394,12 @@ function StatusCounts({ counts }: { counts: Record<ServerStatus, number> }) {
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
-      <p className="text-slate-600">No servers yet.</p>
+    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
+      <p className="text-slate-600">No devices yet.</p>
       <p className="mt-1 text-sm text-slate-500">
-        Add your first server on the{' '}
-        <Link href="/admin/" className="font-medium text-blue-600 hover:underline">
-          Admin page
+        Add your first device on the{' '}
+        <Link href="/admin/" className="font-medium text-brand-600 hover:underline">
+          Devices page
         </Link>{' '}
         to generate its API key.
       </p>

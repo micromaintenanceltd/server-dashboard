@@ -3,8 +3,9 @@ import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
-  title: 'MML Server Dashboard',
-  description: 'Micro Maintenance server monitoring dashboard.',
+  title: 'MML Dashboard',
+  description: 'Micro Maintenance monitoring dashboard.',
+  icons: { icon: '/logo.png' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

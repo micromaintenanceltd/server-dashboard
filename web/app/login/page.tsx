@@ -25,7 +25,7 @@ export default function LoginPage() {
         setToken(r.token);
         await reload();
       } else {
-        setError('Unexpected response from server.');
+        setError('Unexpected response from the service.');
       }
     } catch (err: any) {
       setError(err.message || 'Login failed.');
@@ -45,7 +45,7 @@ export default function LoginPage() {
         setToken(r.token);
         await reload();
       } else {
-        setError('Unexpected response from server.');
+        setError('Unexpected response from the service.');
       }
     } catch (err: any) {
       setError(err.message || 'Verification failed.');
@@ -55,19 +55,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600 font-bold text-white">
-            MML
-          </div>
+        <div className="mb-6 flex flex-col items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Micro Maintenance" className="brand-chip h-16 w-16 p-2.5" />
           <div className="text-center">
-            <div className="font-semibold text-slate-900">Server Dashboard</div>
+            <div className="text-lg font-semibold text-slate-900">Dashboard</div>
             <div className="text-xs text-slate-500">Micro Maintenance</div>
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="card p-6">
           {error && (
             <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
@@ -103,7 +102,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="btn-primary w-full py-2"
               >
                 {busy ? 'Signing in...' : 'Sign in'}
               </button>
@@ -128,7 +127,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="btn-primary w-full py-2"
               >
                 {busy ? 'Verifying...' : 'Verify'}
               </button>

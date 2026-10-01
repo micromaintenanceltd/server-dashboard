@@ -6,6 +6,61 @@
   color-scheme: light;
 }
 
+html,
 body {
-  @apply bg-slate-100 text-slate-900 antialiased;
+  min-height: 100%;
+}
+
+body {
+  @apply text-slate-900 antialiased;
+  /* Soft, professional page background with a faint brand tint. */
+  background-color: #eef2f7;
+  background-image: linear-gradient(180deg, #f4f7fb 0%, #e9eef5 100%);
+  background-attachment: fixed;
+}
+
+@layer components {
+  /* Bevelled white card: subtle top-to-bottom gradient, hairline border, soft
+     shadow with an inner top highlight so it reads as a raised surface. */
+  .card {
+    @apply rounded-xl border border-slate-200/80;
+    background-image: linear-gradient(180deg, #ffffff 0%, #fafbfd 100%);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05),
+      inset 0 1px 0 #ffffff;
+  }
+
+  .card-hover {
+    @apply transition-all duration-150;
+  }
+  .card-hover:hover {
+    @apply -translate-y-0.5;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1), 0 3px 8px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 #ffffff;
+  }
+
+  /* Primary (brand) button with a glossy bevel. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50;
+    background-image: linear-gradient(180deg, #1a86d6 0%, #0070c0 100%);
+    box-shadow: 0 1px 2px rgba(0, 112, 192, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  .btn-primary:hover {
+    background-image: linear-gradient(180deg, #0e7cc9 0%, #005fa6 100%);
+  }
+
+  /* Secondary / ghost button. */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50;
+  }
+
+  /* Subtle header strip for panels / section headers. */
+  .panel-header {
+    background-image: linear-gradient(180deg, #ffffff 0%, #f2f6fb 100%);
+  }
+
+  /* White chip that holds the logo so it pops on any background. */
+  .brand-chip {
+    @apply flex items-center justify-center rounded-lg bg-white;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  }
 }
