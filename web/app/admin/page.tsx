@@ -217,7 +217,12 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
       const parts: string[] = [];
       if (r.teams != null) parts.push(`Teams ${r.teams ? 'sent ✓' : 'failed ✗'}`);
       if (r.email != null) parts.push(`Email ${r.email ? 'sent ✓' : 'failed ✗'}`);
-      if (r.freshdesk != null) parts.push(`Freshdesk ${r.freshdesk ? 'auth ok ✓' : 'failed ✗'}`);
+      if (r.freshdesk != null)
+        parts.push(
+          r.freshdesk
+            ? `Freshdesk ticket #${r.freshdesk_ticket} created ✓`
+            : 'Freshdesk failed ✗'
+        );
       setStatus((parts.join(' · ') || 'Nothing configured') + (r.errors.length ? ` — ${r.errors.join('; ')}` : ''));
     } catch (err: any) {
       onError(err.message || 'Test failed');

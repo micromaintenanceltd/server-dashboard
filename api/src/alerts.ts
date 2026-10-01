@@ -109,13 +109,28 @@ async function freshdeskResolve(cfg: AlertConfig, ticketId: string, msg: AlertMe
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
-// Validate Freshdesk credentials without creating a ticket (used by the test
-// button). Throws on failure.
-export async function freshdeskValidate(cfg: AlertConfig): Promise<void> {
-  const res = await fetch(`${freshdeskBase(cfg)}/tickets?per_page=1`, {
-    headers: { Authorization: freshdeskAuth(cfg) },
+// Create a real, low-priority test ticket (used by the "Send test alert"
+// button) so the end-to-end path is actually exercised. Returns the ticket id.
+export async function freshdeskTestTicket(cfg: AlertConfig): Promise<string> {
+  const body: Record<string, unknown> = {
+    subject: '[TEST] MML Dashboard — alert test',
+    description:
+      '<div>This is a test ticket from the MML dashboard to confirm Freshdesk alerting works.</div><div>You can close or delete it.</div>',
+    email: cfg.freshdesk_email,
+    priority: 1, // low
+    status: 2, // open
+  };
+  if (cfg.freshdesk_group_id && /^\d+$/.test(cfg.freshdesk_group_id)) {
+    body.group_id = Number(cfg.freshdesk_group_id);
+  }
+  const res = await fetch(`${freshdeskBase(cfg)}/tickets`, {
+    method: 'POST',
+    headers: { Authorization: freshdeskAuth(cfg), 'content-type': 'application/json' },
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  const j: any = await res.json();
+  return String(j.id);
 }
 
 // Deliver a message to every configured channel. Never throws; returns which

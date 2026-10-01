@@ -225,6 +225,7 @@ export async function testAlert(): Promise<{
   teams: boolean | null;
   email: boolean | null;
   freshdesk: boolean | null;
+  freshdesk_ticket: string | null;
   errors: string[];
 }> {
   return request('/api/alert-config/test', { method: 'POST', body: {} });

@@ -28,7 +28,7 @@ import {
   deliver,
   evaluateAlert,
   freshdeskReady,
-  freshdeskValidate,
+  freshdeskTestTicket,
   canSendEmail,
   resendSend,
   esc,
@@ -1403,17 +1403,25 @@ app.post('/api/alert-config/test', async (c) => {
     ],
   });
   let freshdesk: boolean | null = null;
+  let freshdeskTicket: string | null = null;
   const errors = [...r.errors];
   if (fdReady) {
     try {
-      await freshdeskValidate(cfg);
+      freshdeskTicket = await freshdeskTestTicket(cfg);
       freshdesk = true;
     } catch (e: any) {
       freshdesk = false;
       errors.push(`Freshdesk: ${e?.message || e}`);
     }
   }
-  return c.json({ ok: errors.length === 0, teams: r.teams, email: r.email, freshdesk, errors });
+  return c.json({
+    ok: errors.length === 0,
+    teams: r.teams,
+    email: r.email,
+    freshdesk,
+    freshdesk_ticket: freshdeskTicket,
+    errors,
+  });
 });
 
 // --- utilities ------------------------------------------------------------
