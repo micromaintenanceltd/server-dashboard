@@ -255,7 +255,9 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
             )}
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            In Teams: channel ••• → Connectors → Incoming Webhook → create → copy the URL here.
+            In Teams: channel ••• → Workflows → “Post to a channel when a webhook request is
+            received” → create → copy the generated URL here. (The old “Connectors” option has been
+            retired by Microsoft.)
           </p>
         </div>
 

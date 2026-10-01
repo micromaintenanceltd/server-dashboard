@@ -175,23 +175,34 @@ export async function deliver(
   return { teams, email, freshdesk, freshdeskRef, errors };
 }
 
-function themeColor(s: Severity): string {
-  return s === 'critical' ? 'dc2626' : '16a34a';
-}
-
+// Teams delivery targets the current "Workflows" (Power Automate) incoming
+// webhook, which replaced the retired Office 365 Connector. That webhook
+// expects an Adaptive Card wrapped as {type:"message", attachments:[...]},
+// not the old MessageCard.
 async function sendTeams(webhookUrl: string, msg: AlertMessage): Promise<void> {
-  const card = {
-    '@type': 'MessageCard',
-    '@context': 'http://schema.org/extensions',
-    themeColor: themeColor(msg.severity),
-    summary: msg.title,
-    title: msg.title,
-    text: msg.lines.join('\n\n'),
+  const accent = msg.severity === 'critical' ? 'Attention' : 'Good';
+  const body = [
+    { type: 'TextBlock', text: msg.title, weight: 'Bolder', size: 'Medium', color: accent, wrap: true },
+    ...msg.lines.map((l) => ({ type: 'TextBlock', text: l, wrap: true, spacing: 'Small' })),
+  ];
+  const payload = {
+    type: 'message',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.4',
+          body,
+        },
+      },
+    ],
   };
   const res = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(card),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
