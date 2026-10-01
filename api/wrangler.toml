@@ -43,6 +43,13 @@ tag = "v2"
 new_sqlite_classes = ["EnrollLimiter"]
 
 # ---------------------------------------------------------------------------
+# Cron trigger: periodic sweep that fires "device offline" alerts on the
+# transition into offline (recovery is detected when a report arrives).
+# ---------------------------------------------------------------------------
+[triggers]
+crons = ["*/5 * * * *"]
+
+# ---------------------------------------------------------------------------
 # Plain (non-secret) vars.
 #
 # DASHBOARD_IP_ALLOWLIST: comma separated list of WAN IPs and/or CIDR ranges

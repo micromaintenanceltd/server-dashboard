@@ -197,3 +197,29 @@ export async function saveClientLogo(
 ): Promise<{ ok: boolean }> {
   return request('/api/client-logos', { method: 'POST', body: { client_name, data_url } });
 }
+
+// --- Alerts (admin) ---
+
+export interface AlertConfigView {
+  teams_set: boolean;
+  email_key_set: boolean;
+  email_to: string;
+  email_from: string;
+  on_check_fail: boolean;
+  on_offline: boolean;
+  on_crit_stopped: boolean;
+}
+export async function fetchAlertConfig(): Promise<AlertConfigView> {
+  return request('/api/alert-config');
+}
+export async function saveAlertConfig(body: Record<string, unknown>): Promise<{ ok: boolean }> {
+  return request('/api/alert-config', { method: 'POST', body });
+}
+export async function testAlert(): Promise<{
+  ok: boolean;
+  teams: boolean | null;
+  email: boolean | null;
+  errors: string[];
+}> {
+  return request('/api/alert-config/test', { method: 'POST', body: {} });
+}

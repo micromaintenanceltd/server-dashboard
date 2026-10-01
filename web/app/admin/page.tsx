@@ -8,6 +8,10 @@ import {
   decommissionServer,
   rotateKey,
   saveClientLogo,
+  fetchAlertConfig,
+  saveAlertConfig,
+  testAlert,
+  type AlertConfigView,
 } from '@/lib/api';
 import type { ServerListItem } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -110,7 +114,207 @@ export default function AdminPage() {
 
       {/* Company logos */}
       <LogosSection servers={servers} onError={setError} />
+
+      {/* Alerts */}
+      <AlertsSection onError={setError} />
     </div>
+  );
+}
+
+function AlertsSection({ onError }: { onError: (m: string) => void }) {
+  const [cfg, setCfg] = useState<AlertConfigView | null>(null);
+  const [teams, setTeams] = useState('');
+  const [emailKey, setEmailKey] = useState('');
+  const [emailTo, setEmailTo] = useState('');
+  const [emailFrom, setEmailFrom] = useState('');
+  const [onCheck, setOnCheck] = useState(true);
+  const [onOffline, setOnOffline] = useState(true);
+  const [onCrit, setOnCrit] = useState(true);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const c = await fetchAlertConfig();
+      setCfg(c);
+      setEmailTo(c.email_to);
+      setEmailFrom(c.email_from);
+      setOnCheck(c.on_check_fail);
+      setOnOffline(c.on_offline);
+      setOnCrit(c.on_crit_stopped);
+      setTeams('');
+      setEmailKey('');
+    } catch (err: any) {
+      onError(err.message || 'Failed to load alert settings');
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  async function save() {
+    setBusy(true);
+    setStatus(null);
+    onError('');
+    try {
+      const body: Record<string, unknown> = {
+        email_to: emailTo,
+        email_from: emailFrom,
+        on_check_fail: onCheck,
+        on_offline: onOffline,
+        on_crit_stopped: onCrit,
+      };
+      if (teams.trim()) body.teams_webhook_url = teams.trim();
+      if (emailKey.trim()) body.email_api_key = emailKey.trim();
+      await saveAlertConfig(body);
+      await reload();
+      setStatus('Saved.');
+    } catch (err: any) {
+      onError(err.message || 'Failed to save alert settings');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearSecret(which: 'teams' | 'email') {
+    setBusy(true);
+    onError('');
+    try {
+      await saveAlertConfig(which === 'teams' ? { clear_teams: true } : { clear_email_key: true });
+      await reload();
+    } catch (err: any) {
+      onError(err.message || 'Failed to update');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function test() {
+    setBusy(true);
+    setStatus(null);
+    onError('');
+    try {
+      const r = await testAlert();
+      const parts: string[] = [];
+      if (r.teams != null) parts.push(`Teams ${r.teams ? 'sent ✓' : 'failed ✗'}`);
+      if (r.email != null) parts.push(`Email ${r.email ? 'sent ✓' : 'failed ✗'}`);
+      setStatus((parts.join(' · ') || 'Nothing configured') + (r.errors.length ? ` — ${r.errors.join('; ')}` : ''));
+    } catch (err: any) {
+      onError(err.message || 'Test failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!cfg) return null;
+
+  return (
+    <section className="card mt-6 overflow-hidden">
+      <div className="panel-header border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+        Alerts
+      </div>
+      <div className="space-y-5 p-4">
+        {/* Teams */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Microsoft Teams Incoming Webhook URL
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              autoComplete="off"
+              value={teams}
+              onChange={(e) => setTeams(e.target.value)}
+              placeholder={cfg.teams_set ? '•••••••• set (leave blank to keep)' : 'https://…webhook.office.com/…'}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+            {cfg.teams_set && (
+              <button className="btn-ghost whitespace-nowrap px-3 py-2" disabled={busy} onClick={() => clearSecret('teams')}>
+                Remove
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            In Teams: channel ••• → Connectors → Incoming Webhook → create → copy the URL here.
+          </p>
+        </div>
+
+        {/* Email */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Alert emails to (comma separated)</label>
+            <input
+              type="text"
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder="alerts@micromaintenance.co.uk"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">From address (verified in Resend)</label>
+            <input
+              type="text"
+              value={emailFrom}
+              onChange={(e) => setEmailFrom(e.target.value)}
+              placeholder="dashboard@micromaintenance.co.uk"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-600">Resend API key</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                autoComplete="off"
+                value={emailKey}
+                onChange={(e) => setEmailKey(e.target.value)}
+                placeholder={cfg.email_key_set ? '•••••••• set (leave blank to keep)' : 're_…'}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+              {cfg.email_key_set && (
+                <button className="btn-ghost whitespace-nowrap px-3 py-2" disabled={busy} onClick={() => clearSecret('email')}>
+                  Remove
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Email stays off until all three email fields are set. Teams works on its own.
+            </p>
+          </div>
+        </div>
+
+        {/* Triggers */}
+        <div>
+          <div className="mb-1 text-xs font-medium text-slate-600">Alert me when…</div>
+          <div className="flex flex-wrap gap-4 text-sm text-slate-700">
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={onCheck} onChange={(e) => setOnCheck(e.target.checked)} />
+              a weekly check fails
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={onOffline} onChange={(e) => setOnOffline(e.target.checked)} />
+              a device goes offline
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={onCrit} onChange={(e) => setOnCrit(e.target.checked)} />
+              a critical service stops
+            </label>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-primary" disabled={busy} onClick={save}>
+            {busy ? 'Saving…' : 'Save alert settings'}
+          </button>
+          <button className="btn-ghost px-3.5 py-2" disabled={busy} onClick={test}>
+            Send test alert
+          </button>
+          {status && <span className="text-sm text-slate-600">{status}</span>}
+        </div>
+      </div>
+    </section>
   );
 }
 

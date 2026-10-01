@@ -23,6 +23,7 @@ import {
   type UserRow,
   type UserRole,
 } from './auth/users';
+import { loadAlertConfig, deliver, evaluateAlert, buildMessage } from './alerts';
 
 // Re-export the Durable Object classes so the runtime can find them.
 export { ServerState } from './durable/serverState';
@@ -58,6 +59,18 @@ async function ensureSchema(db: D1Database): Promise<void> {
     await db
       .prepare(
         `CREATE TABLE IF NOT EXISTS client_logos (client_name TEXT PRIMARY KEY, data_url TEXT NOT NULL, updated_at TEXT NOT NULL)`
+      )
+      .run();
+    // Alerting: a single-row config table and a per-(server,kind) state table
+    // used to fire only on transitions (bad <-> recovered).
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS alert_config (id INTEGER PRIMARY KEY, teams_webhook_url TEXT, email_to TEXT, email_from TEXT, email_api_key TEXT, on_check_fail INTEGER NOT NULL DEFAULT 1, on_offline INTEGER NOT NULL DEFAULT 1, on_crit_stopped INTEGER NOT NULL DEFAULT 1, updated_at TEXT)`
+      )
+      .run();
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS alert_state (server_id TEXT NOT NULL, kind TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, updated_at TEXT, PRIMARY KEY (server_id, kind))`
       )
       .run();
     schemaEnsured = true;
@@ -669,6 +682,37 @@ app.post('/api/report', async (c) => {
     }),
   });
 
+  // Alerts (after the response, so reporting latency is unaffected): a report
+  // means the device is online, so clear any offline alert; and raise/clear the
+  // critical-service-stopped alert from this snapshot.
+  const stopped = Array.isArray(payload.services?.stopped_critical)
+    ? (payload.services!.stopped_critical as string[])
+    : [];
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        const cfg = await loadAlertConfig(c.env.DB);
+        await evaluateAlert(c.env.DB, cfg, {
+          serverId: server.id,
+          serverName: server.name,
+          clientName: server.client_name,
+          kind: 'offline',
+          bad: false,
+        });
+        await evaluateAlert(c.env.DB, cfg, {
+          serverId: server.id,
+          serverName: server.name,
+          clientName: server.client_name,
+          kind: 'crit',
+          bad: stopped.length > 0,
+          detail: stopped.join(', '),
+        });
+      } catch {
+        // alerts must never affect ingest
+      }
+    })()
+  );
+
   // If an admin has marked this server for decommission, tell the agent so it
   // can self-uninstall on this outbound check-in. This is the ONE case where the
   // API's response causes the agent to act, and it is bounded to self-uninstall
@@ -793,9 +837,11 @@ app.post('/api/checks', async (c) => {
   if (!rawKey) return c.json({ error: 'Missing Bearer API key.' }, 401);
 
   const hash = await hashApiKey(rawKey);
-  const server = await c.env.DB.prepare(`SELECT id FROM servers WHERE api_key_hash = ?1`)
+  const server = await c.env.DB.prepare(
+    `SELECT id, name, client_name FROM servers WHERE api_key_hash = ?1`
+  )
     .bind(hash)
-    .first<{ id: string }>();
+    .first<{ id: string; name: string; client_name: string }>();
   if (!server) return c.json({ error: 'Invalid API key.' }, 401);
 
   let payload: CheckRunPayload;
@@ -843,6 +889,30 @@ app.post('/api/checks', async (c) => {
       runAt
     )
     .run();
+
+  // Alert on the fail<->pass transition (after the response).
+  const failedTitles = results
+    .filter((r) => r.status === 'fail')
+    .map((r) => r.title)
+    .filter(Boolean)
+    .join(', ');
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        const cfg = await loadAlertConfig(c.env.DB);
+        await evaluateAlert(c.env.DB, cfg, {
+          serverId: server.id,
+          serverName: server.name,
+          clientName: server.client_name,
+          kind: 'check',
+          bad: fail > 0,
+          detail: failedTitles,
+        });
+      } catch {
+        // alerts must never affect ingest
+      }
+    })()
+  );
 
   return c.json({ ok: true, overall_status: overall, pass, warn, fail, run_at: runAt });
 });
@@ -1133,6 +1203,101 @@ app.post('/api/servers/:id/rotate-key', async (c) => {
   });
 });
 
+// ==========================================================================
+// Alert configuration (admin). Secrets (Teams webhook URL, email API key) are
+// never returned to the browser - only whether they are set. Blank on save
+// keeps the existing value; clear_* removes it.
+// ==========================================================================
+
+app.get('/api/alert-config', async (c) => {
+  const u = await requireAdmin(c);
+  if (u instanceof Response) return u;
+  const cfg = await loadAlertConfig(c.env.DB);
+  return c.json({
+    teams_set: !!cfg.teams_webhook_url,
+    email_key_set: !!cfg.email_api_key,
+    email_to: cfg.email_to ?? '',
+    email_from: cfg.email_from ?? '',
+    on_check_fail: cfg.on_check_fail,
+    on_offline: cfg.on_offline,
+    on_crit_stopped: cfg.on_crit_stopped,
+  });
+});
+
+app.post('/api/alert-config', async (c) => {
+  const u = await requireAdmin(c);
+  if (u instanceof Response) return u;
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const cur = await loadAlertConfig(c.env.DB);
+
+  let teams = cur.teams_webhook_url;
+  if (body.clear_teams) teams = null;
+  else if (typeof body.teams_webhook_url === 'string' && body.teams_webhook_url.trim())
+    teams = body.teams_webhook_url.trim();
+
+  let emailKey = cur.email_api_key;
+  if (body.clear_email_key) emailKey = null;
+  else if (typeof body.email_api_key === 'string' && body.email_api_key.trim())
+    emailKey = body.email_api_key.trim();
+
+  const emailTo = typeof body.email_to === 'string' ? body.email_to.trim() || null : cur.email_to;
+  const emailFrom =
+    typeof body.email_from === 'string' ? body.email_from.trim() || null : cur.email_from;
+  const onCheck = body.on_check_fail === undefined ? cur.on_check_fail : !!body.on_check_fail;
+  const onOffline = body.on_offline === undefined ? cur.on_offline : !!body.on_offline;
+  const onCrit = body.on_crit_stopped === undefined ? cur.on_crit_stopped : !!body.on_crit_stopped;
+
+  if (teams && !/^https:\/\//i.test(teams)) {
+    return c.json({ error: 'Teams webhook must be an https URL.' }, 400);
+  }
+
+  await c.env.DB.prepare(
+    `INSERT INTO alert_config
+       (id, teams_webhook_url, email_to, email_from, email_api_key, on_check_fail, on_offline, on_crit_stopped, updated_at)
+     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+     ON CONFLICT(id) DO UPDATE SET
+       teams_webhook_url = excluded.teams_webhook_url,
+       email_to = excluded.email_to,
+       email_from = excluded.email_from,
+       email_api_key = excluded.email_api_key,
+       on_check_fail = excluded.on_check_fail,
+       on_offline = excluded.on_offline,
+       on_crit_stopped = excluded.on_crit_stopped,
+       updated_at = excluded.updated_at`
+  )
+    .bind(teams, emailTo, emailFrom, emailKey, onCheck ? 1 : 0, onOffline ? 1 : 0, onCrit ? 1 : 0, new Date().toISOString())
+    .run();
+
+  return c.json({ ok: true });
+});
+
+app.post('/api/alert-config/test', async (c) => {
+  const u = await requireAdmin(c);
+  if (u instanceof Response) return u;
+  const cfg = await loadAlertConfig(c.env.DB);
+  const emailReady = !!(cfg.email_to && cfg.email_from && cfg.email_api_key);
+  if (!cfg.teams_webhook_url && !emailReady) {
+    return c.json(
+      { error: 'No channel configured. Add a Teams webhook and/or email settings, then Save first.' },
+      400
+    );
+  }
+  const r = await deliver(cfg, {
+    severity: 'good',
+    title: 'MML Dashboard — test alert',
+    lines: [
+      'This is a test alert from the MML dashboard.',
+      'If you can see this, alerting is configured correctly.',
+    ],
+  });
+  return c.json({ ok: r.errors.length === 0, teams: r.teams, email: r.email, errors: r.errors });
+});
+
 // --- utilities ------------------------------------------------------------
 
 function numOrNull(v: unknown): number | null {
@@ -1148,4 +1313,33 @@ function safeParse<T>(text: string | null, fallback: T): T {
   }
 }
 
-export default app;
+// Scheduled (cron) sweep: detect devices that have crossed into "offline" and
+// fire the offline alert on that transition. Recovery is handled when a report
+// arrives. Runs every few minutes (see wrangler.toml [triggers]).
+async function sweepOffline(env: Env): Promise<void> {
+  const cfg = await loadAlertConfig(env.DB);
+  if (!cfg.on_offline) return;
+  const stale = staleMinutes(env);
+  const now = Date.now();
+  const { results } = await env.DB.prepare(
+    'SELECT id, name, client_name, last_seen_at FROM servers'
+  ).all<{ id: string; name: string; client_name: string; last_seen_at: string | null }>();
+  for (const s of results ?? []) {
+    const status = computeStatus(s.last_seen_at, stale, now);
+    await evaluateAlert(env.DB, cfg, {
+      serverId: s.id,
+      serverName: s.name,
+      clientName: s.client_name,
+      kind: 'offline',
+      bad: status === 'offline',
+    });
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled: async (_controller: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    await ensureSchema(env.DB);
+    ctx.waitUntil(sweepOffline(env));
+  },
+} satisfies ExportedHandler<Env>;
