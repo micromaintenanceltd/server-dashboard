@@ -12,7 +12,7 @@ module.exports = {
   id: 'iris-invu',
   title: 'IRIS / INVU',
   configKey: 'irisInvu',
-  defaultEnabled: true,
+  defaultEnabled: false,
 
   async run(cfg, shared, checkCfg) {
     const staleHours = num(checkCfg.staleHours, 48);
@@ -22,7 +22,13 @@ module.exports = {
       "Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'INVU V6 Business Engine' } | Select-Object -First 1 Name | ConvertTo-Json -Compress",
       { fallback: null }
     );
-    if (!toArray(raw)[0]) return null; // not installed -> skip
+    if (!toArray(raw)[0]) {
+      return {
+        status: 'warn',
+        detail: 'IRIS/INVU (INVU V6 Business Engine) not detected on this device.',
+        value: null,
+      };
+    }
 
     if (!backupPath) {
       return { status: 'fail', detail: 'IRIS/INVU installed but no backup path configured (set it on the settings page).', value: null };

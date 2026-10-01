@@ -101,7 +101,7 @@ const PAGE = `<!doctype html>
       <div><label>Minute</label><input id="schedMin" type="number" min="0" max="59" /></div>
     </div>
 
-    <p class="muted" style="margin-top:12px">Tick the checks to run each week. Client-specific checks also skip themselves automatically if the application is not installed on this server.</p>
+    <p class="muted" style="margin-top:12px">Tick the checks this server should run each week. Enable only the ones that apply here &mdash; an enabled check whose software isn't found reports a warning so misconfiguration is visible.</p>
     <div id="checkToggles" style="margin-top:6px"></div>
   </div>
 
@@ -146,25 +146,25 @@ const CHECKS = [
     desc: 'Always applies. Warns if the last successful backup is older than the age below.',
     fields: [{ key: 'maxAgeHours', label: 'Max age (hours)', type: 'number' }] },
   { key: 'sage', label: 'Sage 50 (file backup)',
-    desc: 'Skips automatically if Sage 50 Accounts is not installed. Backup folders are auto-discovered.',
+    desc: 'Enable on servers running Sage 50 Accounts. Backup folders are auto-discovered; warns if Sage is not detected.',
     fields: [{ key: 'staleHours', label: 'Stale after (hours)', type: 'number' }] },
   { key: 'rdpguard', label: 'RDPGuard',
-    desc: 'Skips automatically if RDPGuard is not installed. Fails if installed but not running.',
+    desc: 'Enable on servers running RDPGuard. Fails if installed but not running; warns if not detected.',
     fields: [] },
   { key: 'irisInvu', label: 'IRIS / INVU',
-    desc: 'Skips unless the INVU V6 Business Engine service is present. Checks IRIS*.bak and IRISDOCS*.zip in the folder below.',
+    desc: 'Enable on servers running IRIS/INVU. Checks IRIS*.bak and IRISDOCS*.zip in the folder below; warns if the INVU service is not detected.',
     fields: [
       { key: 'backupPath', label: 'IRIS backup folder', type: 'text', placeholder: 'e.g. D:\\\\IRIS\\\\Backups' },
       { key: 'staleHours', label: 'Stale after (hours)', type: 'number' },
     ] },
   { key: 'sageSql', label: 'Sage SQL backups',
-    desc: 'Runs only when one or more folders are listed. Each folder is scanned for the latest .bak/.zip.',
+    desc: 'Enable where Sage SQL backups run. Scans each folder below for the latest .bak/.zip; warns if no folders are set.',
     fields: [
       { key: 'paths', label: 'Backup folders (one per line)', type: 'list' },
       { key: 'staleHours', label: 'Stale after (hours)', type: 'number' },
     ] },
   { key: 'storagecraft', label: 'StorageCraft ShadowProtect SPX',
-    desc: 'Skips automatically if ShadowProtect SPX is not installed. Reads job results from the SPX logs.',
+    desc: 'Enable on servers running ShadowProtect SPX. Reads job results from the SPX logs; warns if SPX is not detected.',
     fields: [{ key: 'staleHours', label: 'Stale after (hours)', type: 'number' }] },
 ];
 

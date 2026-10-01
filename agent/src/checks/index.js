@@ -23,11 +23,12 @@ const REGISTRY = [
   storagecraft,
 ];
 
-// A check is enabled unless its config object sets enabled:false (the tickbox
-// on the local settings page). A check with no config entry defaults to on.
+// A check's config `enabled` flag (the tickbox on the local settings page) is
+// authoritative when present. Only when the config says nothing do we fall back
+// to the module's defaultEnabled.
 function isEnabled(mod, checkCfg) {
-  if (checkCfg && typeof checkCfg === 'object' && !Array.isArray(checkCfg) && checkCfg.enabled === false) {
-    return false;
+  if (checkCfg && typeof checkCfg === 'object' && !Array.isArray(checkCfg) && typeof checkCfg.enabled === 'boolean') {
+    return checkCfg.enabled;
   }
   return mod.defaultEnabled !== false;
 }

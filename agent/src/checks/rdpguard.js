@@ -7,7 +7,7 @@ module.exports = {
   id: 'rdpguard',
   title: 'RDPGuard',
   configKey: 'rdpguard',
-  defaultEnabled: true,
+  defaultEnabled: false,
 
   async run() {
     const script =
@@ -15,7 +15,11 @@ module.exports = {
       'Select-Object -First 1 Name, DisplayName, Status | ConvertTo-Json -Compress';
     const raw = await runPsJson(script, { fallback: null });
     const svc = toArray(raw)[0];
-    if (!svc || !svc.Name) return null; // not installed -> skip
+    if (!svc || !svc.Name) {
+      // Enabled for this device but not found. The technician chose to check it,
+      // so surface it (untick the check if RDPGuard doesn't apply here).
+      return { status: 'warn', detail: 'RDPGuard not detected on this device.', value: null };
+    }
 
     const running = svc.Status === 4 || svc.Status === 'Running';
     if (running) {

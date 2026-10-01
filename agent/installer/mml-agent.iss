@@ -12,10 +12,11 @@
 ;   - the running service is stopped so its binaries can be replaced,
 ;   - the service registration is refreshed and started on the new version.
 ;
-; The Worker API URL and the enrollment token are baked in at BUILD time via
-; preprocessor defines, so they are NOT stored in this file. build.ps1 passes
-; them, e.g:
-;   iscc /DApiUrl=https://... /DEnrollToken=<token> /DAppVersion=0.3.0 mml-agent.iss
+; The Worker API URL is baked in at BUILD time via a preprocessor define
+; (it is not secret). The ENROLMENT TOKEN is deliberately NOT baked in - the
+; technician types it during installation, so it never lives in the installer
+; .exe or on disk. build.ps1 passes the URL, e.g:
+;   iscc /DApiUrl=https://... /DAppVersion=0.3.0 mml-agent.iss
 ;
 ; Requirements in this folder before building (see installer/README.md):
 ;   ..\dist\mml-agent.exe           (built with `npm run build:exe`)
@@ -25,11 +26,8 @@
 #ifndef ApiUrl
   #error You must pass /DApiUrl=<worker url> to iscc (see build.ps1).
 #endif
-#ifndef EnrollToken
-  #error You must pass /DEnrollToken=<token> to iscc (see build.ps1).
-#endif
 #ifndef AppVersion
-  #define AppVersion "0.3.5"
+  #define AppVersion "0.3.6"
 #endif
 
 #define AppName "MML Server Agent"
@@ -122,15 +120,17 @@ begin
   NeedsEnroll := not ConfigExists();
 
   CompanyPage := CreateInputQueryPage(wpSelectDir,
-    'Client details',
-    'Which client does this server belong to?',
-    'Enter the company (client) name as it should appear in the dashboard. ' +
-    'The server name is detected automatically from this machine.');
+    'Enrolment details',
+    'Register this server with the MML dashboard',
+    'Enter the company (client) name as it should appear in the dashboard, and the ' +
+    'enrolment token (ask your MML admin). The server name is detected automatically. ' +
+    'The token is used once to register and is never stored on this machine.');
   CompanyPage.Add('Company / client name:', False);
+  CompanyPage.Add('Enrolment token:', True);          { masked }
   CompanyPage.Add('Location / site (optional):', False);
 end;
 
-{ Skip the company prompt on an upgrade. }
+{ Skip the enrolment prompt on an upgrade. }
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := (PageID = CompanyPage.ID) and (not NeedsEnroll);
@@ -144,6 +144,11 @@ begin
     if Trim(CompanyPage.Values[0]) = '' then
     begin
       MsgBox('Please enter the company (client) name.', mbError, MB_OK);
+      Result := False;
+    end
+    else if Trim(CompanyPage.Values[1]) = '' then
+    begin
+      MsgBox('Please enter the enrolment token (ask your MML admin).', mbError, MB_OK);
       Result := False;
     end;
   end;
@@ -182,15 +187,16 @@ end;
   when entered, so an empty value never becomes a stray argument. }
 function BuildEnrollArgs(Param: String): String;
 var
-  Company, Location, Args: String;
+  Company, Token, Location, Args: String;
 begin
   Company := Trim(CompanyPage.Values[0]);
-  Location := Trim(CompanyPage.Values[1]);
+  Token := Trim(CompanyPage.Values[1]);
+  Location := Trim(CompanyPage.Values[2]);
 
   Args := 'enroll' +
           ' --company ' + QuoteArg(Company) +
           ' --api-url ' + QuoteArg('{#ApiUrl}') +
-          ' --enroll-token ' + QuoteArg('{#EnrollToken}');
+          ' --enroll-token ' + QuoteArg(Token);
 
   if Location <> '' then
     Args := Args + ' --location ' + QuoteArg(Location);

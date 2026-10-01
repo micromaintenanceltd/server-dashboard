@@ -6,10 +6,10 @@
 #   3. Compile the Inno Setup installer, baking in the API URL + enroll token.
 #   4. Sign the produced setup.exe (Azure Trusted Signing) - optional.
 #
-# Secrets are passed in, never hard-coded. Example:
+# Only the (non-secret) API URL is baked in. The enrolment token is NOT baked
+# any more - the technician types it during installation. Example:
 #
-#   $env:MML_API_URL      = "https://mml-dashboard-api.<sub>.workers.dev"
-#   $env:MML_ENROLL_TOKEN = "<the enroll token you set with wrangler secret>"
+#   $env:MML_API_URL = "https://mml-dashboard-api.<sub>.workers.dev"
 #   .\build.ps1 -Version 0.1.0 -Sign
 #
 # See installer\README.md for prerequisites (pkg, WinSW, Inno Setup, and the
@@ -19,7 +19,6 @@
 param(
   [string]$Version = "0.1.0",
   [string]$ApiUrl = $env:MML_API_URL,
-  [string]$EnrollToken = $env:MML_ENROLL_TOKEN,
   [switch]$Sign,
 
   # Azure Trusted Signing parameters (only needed with -Sign). These match the
@@ -40,7 +39,8 @@ function Require-Value($value, $name) {
 }
 
 Require-Value $ApiUrl "ApiUrl (MML_API_URL)"
-Require-Value $EnrollToken "EnrollToken (MML_ENROLL_TOKEN)"
+# NOTE: the enrolment token is no longer baked in. The technician types it
+# during installation, so it never lives in the installer .exe.
 
 $agentExe = Join-Path $agentRoot "dist\mml-agent.exe"
 $winsw = Join-Path $here "vendor\mml-agent-service.exe"
@@ -90,7 +90,6 @@ if (-not $iscc) {
 
 & $iscc `
   "/DApiUrl=$ApiUrl" `
-  "/DEnrollToken=$EnrollToken" `
   "/DAppVersion=$Version" `
   (Join-Path $here "mml-agent.iss")
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed." }

@@ -11,14 +11,20 @@ module.exports = {
   id: 'sage-sql',
   title: 'Sage SQL backups',
   configKey: 'sageSql',
-  defaultEnabled: true,
+  defaultEnabled: false,
 
   async run(cfg, shared, checkCfg) {
     const staleHours = num(checkCfg.staleHours, 48);
     const paths = (Array.isArray(checkCfg.paths) ? checkCfg.paths : [])
       .map((p) => String(p).trim())
       .filter(Boolean);
-    if (paths.length === 0) return null; // not configured -> skip
+    if (paths.length === 0) {
+      return {
+        status: 'warn',
+        detail: 'Sage SQL check is enabled but no backup folders are configured (add them on the settings page).',
+        value: null,
+      };
+    }
 
     const missing = [];
     const stale = [];

@@ -16,23 +16,24 @@ module.exports = {
   settings: { enabled: true, port: 8000 },
 
   // Weekly check run configuration. Runs once a week at the scheduled UK time.
-  // Each check can be ticked on/off in the local settings page ("enabled").
-  // The client-specific checks (Sage, RDPGuard, IRIS/INVU, Sage SQL,
-  // StorageCraft) also skip themselves automatically when the application is
-  // not installed on the server, so leaving them enabled is safe.
+  // Each check is ticked on/off per server in the local settings page
+  // ("enabled"). The client-specific checks default to OFF so each server is
+  // explicitly configured for what it runs; a technician enables the ones that
+  // apply. An enabled check whose app/prerequisite isn't present reports a
+  // warning (rather than silently skipping), so misconfiguration is visible.
   checks: {
     schedule: { dayOfWeek: 'monday', hour: 7, minute: 0 },
-    // Windows Server Backup — always applies.
+    // Windows Server Backup — applies to every server, on by default.
     windowsServerBackup: { enabled: true, maxAgeHours: 48 },
     // Sage 50 Accounts file backups (auto-discovered).
-    sage: { enabled: true, staleHours: 48 },
+    sage: { enabled: false, staleHours: 48 },
     // RDPGuard service running.
-    rdpguard: { enabled: true },
+    rdpguard: { enabled: false },
     // IRIS / INVU backups. backupPath must point at the IRIS backup folder.
-    irisInvu: { enabled: true, backupPath: '', staleHours: 48 },
+    irisInvu: { enabled: false, backupPath: '', staleHours: 48 },
     // Sage SQL backups. Add one or more folders to scan for .bak/.zip.
-    sageSql: { enabled: true, paths: [], staleHours: 48 },
+    sageSql: { enabled: false, paths: [], staleHours: 48 },
     // StorageCraft ShadowProtect SPX backup jobs (parsed from SPX logs).
-    storagecraft: { enabled: true, staleHours: 48 },
+    storagecraft: { enabled: false, staleHours: 48 },
   },
 };

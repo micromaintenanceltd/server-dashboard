@@ -13,7 +13,7 @@ module.exports = {
   id: 'sage',
   title: 'Sage (file backup)',
   configKey: 'sage',
-  defaultEnabled: true,
+  defaultEnabled: false,
 
   async run(cfg, shared, checkCfg) {
     const staleHours = num(checkCfg.staleHours, 48);
@@ -41,7 +41,9 @@ module.exports = {
     ].join('\n');
 
     const r = await runPsJson(script, { fallback: null, timeoutMs: 90000 });
-    if (!r || !r.installed) return null; // not installed -> skip
+    if (!r || !r.installed) {
+      return { status: 'warn', detail: 'Sage 50 Accounts not detected on this device.', value: null };
+    }
 
     if (!r.backupFound) {
       return {

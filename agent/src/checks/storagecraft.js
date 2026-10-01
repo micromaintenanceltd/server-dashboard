@@ -12,7 +12,7 @@ module.exports = {
   id: 'storagecraft',
   title: 'StorageCraft ShadowProtect SPX',
   configKey: 'storagecraft',
-  defaultEnabled: true,
+  defaultEnabled: false,
 
   async run(cfg, shared, checkCfg) {
     const staleHours = num(checkCfg.staleHours, 48);
@@ -45,7 +45,13 @@ module.exports = {
     ].join('\n');
 
     const r = await runPsJson(script, { fallback: null, timeoutMs: 60000 });
-    if (!r || !r.installed) return null; // not installed -> skip
+    if (!r || !r.installed) {
+      return {
+        status: 'warn',
+        detail: 'ShadowProtect SPX not detected on this device.',
+        value: null,
+      };
+    }
 
     const jobs = Array.isArray(r.jobs) ? r.jobs : r.jobs ? [r.jobs] : [];
     if (jobs.length === 0) {
