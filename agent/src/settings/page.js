@@ -66,6 +66,12 @@ const PAGE = `<!doctype html>
       <button class="ghost" type="button" onclick="toggleKey()">Show</button>
     </div>
     <p class="muted" id="apiKeyHint">This key authenticates this server to the dashboard. For security it is never shown here. Leave blank to keep the current key; type a new key only to rotate it.</p>
+    <label>Settings token (required to save changes)</label>
+    <div class="reveal">
+      <input id="settingsToken" type="password" autocomplete="off" placeholder="from config.json -> settingsToken" />
+      <button class="ghost" type="button" onclick="toggleTok()">Show</button>
+    </div>
+    <p class="muted">Saving settings and the Send/Run buttons require this token. An administrator can find it in <code>config.json</code> next to the agent (the <code>settingsToken</code> value). It is remembered for this browser session.</p>
   </div>
 
   <div class="card">
@@ -113,6 +119,12 @@ const PAGE = `<!doctype html>
 const H = { 'Content-Type': 'application/json', 'X-Requested-With': 'mml-settings' };
 let current = {};
 
+// Headers for mutating calls: include the settings token the user entered.
+function authHeaders() {
+  const tok = (document.getElementById('settingsToken').value || '').trim();
+  return tok ? Object.assign({}, H, { 'X-Settings-Token': tok }) : H;
+}
+
 function toast(msg, ok) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = (ok ? 'ok' : 'err') + ' show';
@@ -120,6 +132,10 @@ function toast(msg, ok) {
 }
 function toggleKey() {
   const el = document.getElementById('apiKey');
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+function toggleTok() {
+  const el = document.getElementById('settingsToken');
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 
@@ -214,6 +230,11 @@ async function load() {
   document.getElementById('schedMin').value = sch.minute ?? 0;
   renderToggles(checks);
   document.getElementById('hostline').textContent = 'Local configuration for ' + (current._hostname || 'this server');
+  // Restore the settings token for this browser session (not from the server).
+  try {
+    const tokEl = document.getElementById('settingsToken');
+    if (!tokEl.value) tokEl.value = sessionStorage.getItem('mml_settings_token') || '';
+  } catch {}
 }
 
 function buildConfig() {
@@ -262,9 +283,10 @@ async function save() {
   catch (e) { return toast('Invalid JSON in one of the list fields: ' + e.message, false); }
   if (!cfg.apiUrl) return toast('API URL is required.', false);
   if (!current.apiKeySet && !cfg.apiKey) return toast('API key is required (no key is stored yet).', false);
-  const r = await fetch('/api/config', { method: 'POST', headers: H, body: JSON.stringify(cfg) });
+  const r = await fetch('/api/config', { method: 'POST', headers: authHeaders(), body: JSON.stringify(cfg) });
   const body = await r.json().catch(() => ({}));
   if (r.ok) {
+    rememberToken();
     toast('Settings saved.', true);
     // Reload from the server so the key stays masked and apiKeySet is accurate
     // (a rotation may have just set one). Clears the typed key from the field.
@@ -274,11 +296,18 @@ async function save() {
   }
 }
 
+function rememberToken() {
+  try {
+    const tok = (document.getElementById('settingsToken').value || '').trim();
+    if (tok) sessionStorage.setItem('mml_settings_token', tok);
+  } catch {}
+}
+
 async function act(path, msg) {
   toast(msg, true);
-  const r = await fetch('/api/' + path, { method: 'POST', headers: H });
+  const r = await fetch('/api/' + path, { method: 'POST', headers: authHeaders() });
   const body = await r.json().catch(() => ({}));
-  if (r.ok) toast(body.message || 'Done.', true);
+  if (r.ok) { rememberToken(); toast(body.message || 'Done.', true); }
   else toast('Failed: ' + (body.error || r.status), false);
 }
 

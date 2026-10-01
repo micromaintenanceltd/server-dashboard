@@ -68,6 +68,19 @@ async function handle(req, res, ctx) {
     }
   }
 
+  // Mutating endpoints additionally require the settings token. This stops a
+  // local process (or a drive-by that got past CSRF) from changing config or
+  // triggering sends without knowing the token stored in config.json. Reads
+  // stay open so the page can display status.
+  const mutating =
+    req.method === 'POST' &&
+    (path === '/api/config' || path === '/api/send-report' || path === '/api/run-check');
+  if (mutating && !tokenOk(req, ctx.getConfig())) {
+    return json(res, 403, {
+      error: 'Settings token required. Enter the token (config.json → settingsToken) to make changes.',
+    });
+  }
+
   if (req.method === 'GET' && path === '/api/config') {
     return json(res, 200, publicConfig(ctx.getConfig()));
   }
@@ -123,6 +136,19 @@ async function handle(req, res, ctx) {
   json(res, 404, { error: 'Not found' });
 }
 
+// The settings token gates mutating endpoints. If none is configured yet (an
+// older install before this existed), allow — the agent generates and persists
+// one at startup, so this only ever allows during the brief first run.
+function tokenOk(req, cfg) {
+  const want = cfg && cfg.settingsToken ? String(cfg.settingsToken) : '';
+  if (!want) return true;
+  const got = String(req.headers['x-settings-token'] || '');
+  if (got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= got.charCodeAt(i) ^ want.charCodeAt(i);
+  return diff === 0;
+}
+
 // CSRF guard: require our custom header and a loopback Host, and reject any
 // cross-site Origin. Browsers cannot set X-Requested-With cross-origin without a
 // CORS preflight, which we never approve.
@@ -154,6 +180,7 @@ function publicConfig(cfg) {
   }
   out.apiKey = '';
   out.apiKeySet = !!(cfg.apiKey && String(cfg.apiKey).trim());
+  delete out.settingsToken; // never expose the token to the page
   out._hostname = os.hostname();
   return out;
 }

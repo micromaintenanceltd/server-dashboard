@@ -11,6 +11,7 @@
 // They can also come from MML_API_URL / MML_ENROLL_TOKEN env vars as a fallback.
 
 const os = require('os');
+const crypto = require('crypto');
 const { writeConfig, defaultConfigPath } = require('../config');
 const defaults = require('../defaults');
 const log = require('../logger');
@@ -96,9 +97,13 @@ async function enroll(argv) {
   // Build config.json from the returned key plus sensible defaults. The
   // enrollment token is deliberately NOT written to disk; it is only needed at
   // install time.
+  // Token that gates changes on the local settings page (127.0.0.1:8000).
+  const settingsToken = crypto.randomBytes(18).toString('hex');
+
   const cfg = {
     apiUrl: base,
     apiKey: body.api_key,
+    settingsToken,
     intervalMinutes: interval,
     avProduct: defaults.avProduct,
     avServiceNames: defaults.avServiceNames,
@@ -113,6 +118,7 @@ async function enroll(argv) {
     `Enrolled ${body.reenrolled ? '(re-enrolled existing record)' : '(new record created)'}: ` +
       `server "${body.name}" for "${body.client_name}". Config written to ${written}.`
   );
+  log.info(`Local settings token (for 127.0.0.1:8000): ${settingsToken}`);
   log.info('The dashboard will show this server, and it goes Online after the first report.');
 }
 
