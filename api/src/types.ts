@@ -22,6 +22,12 @@ export interface Env {
   // One-time secret that authorises creating the very first admin account via
   // POST /api/auth/setup (only works while there are no users yet).
   BOOTSTRAP_TOKEN: string;
+
+  // Shared password a technician must enter on an agent's local settings page
+  // (127.0.0.1:8000) to save changes. The agent verifies it against this via
+  // POST /api/verify-settings-password, so it lives only here, not on agents.
+  // Optional: if unset, agents cannot authorise local settings changes.
+  SETTINGS_PASSWORD?: string;
 }
 
 // A server row as stored in D1.

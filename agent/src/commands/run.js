@@ -101,19 +101,6 @@ function run() {
       `(config: ${live._configPath})`
   );
 
-  // Ensure a settings-page token exists (older installs enrolled before this
-  // was added). Generate once and persist, so the local settings page can be
-  // unlocked. The token is in config.json (settingsToken).
-  if (!live.settingsToken) {
-    try {
-      live.settingsToken = require('crypto').randomBytes(18).toString('hex');
-      writeConfig(stripInternal(live), live._configPath);
-      log.info('Generated a local settings token (config.json -> settingsToken).');
-    } catch (err) {
-      log.warn('Could not persist settings token:', err.message);
-    }
-  }
-
   let running = true;
   let currentInterval = live.intervalMinutes;
 
@@ -145,9 +132,6 @@ function run() {
     if (!incoming.apiKey || String(incoming.apiKey).trim() === '') {
       throw new Error('API key is required.');
     }
-
-    // The settings token is managed by the agent, never changed from the page.
-    incoming.settingsToken = live.settingsToken;
 
     // Build a clean object to persist (drop internal/injected fields).
     const clean = {};
@@ -193,13 +177,6 @@ function run() {
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
-}
-
-// Drop internal (underscore-prefixed) fields before persisting config.
-function stripInternal(obj) {
-  const clean = {};
-  for (const [k, v] of Object.entries(obj)) if (!k.startsWith('_')) clean[k] = v;
-  return clean;
 }
 
 module.exports = { run };

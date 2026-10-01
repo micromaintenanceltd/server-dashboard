@@ -88,4 +88,32 @@ async function postJson(cfg, path, body) {
   }
 }
 
-module.exports = { collectReport, postReport, postCheckRun, deregister, AGENT_VERSION };
+// Ask the dashboard whether a settings password (typed on the local settings
+// page) matches the server-side SETTINGS_PASSWORD secret. Returns true/false;
+// never throws. Used to authorise local settings changes without storing any
+// password on the agent.
+async function verifySettingsPassword(cfg, password) {
+  if (!password) return false;
+  const url = cfg.apiUrl.replace(/\/+$/, '') + '/api/verify-settings-password';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) return false;
+    const j = await res.json();
+    return !!(j && j.ok);
+  } catch {
+    return false;
+  }
+}
+
+module.exports = {
+  collectReport,
+  postReport,
+  postCheckRun,
+  deregister,
+  verifySettingsPassword,
+  AGENT_VERSION,
+};

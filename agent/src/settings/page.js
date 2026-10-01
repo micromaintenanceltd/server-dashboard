@@ -66,12 +66,12 @@ const PAGE = `<!doctype html>
       <button class="ghost" type="button" onclick="toggleKey()">Show</button>
     </div>
     <p class="muted" id="apiKeyHint">This key authenticates this server to the dashboard. For security it is never shown here. Leave blank to keep the current key; type a new key only to rotate it.</p>
-    <label>Settings token (required to save changes)</label>
+    <label>Settings password (required to save changes)</label>
     <div class="reveal">
-      <input id="settingsToken" type="password" autocomplete="off" placeholder="from config.json -> settingsToken" />
+      <input id="settingsPassword" type="password" autocomplete="off" placeholder="MML settings password" />
       <button class="ghost" type="button" onclick="toggleTok()">Show</button>
     </div>
-    <p class="muted">Saving settings and the Send/Run buttons require this token. An administrator can find it in <code>config.json</code> next to the agent (the <code>settingsToken</code> value). It is remembered for this browser session.</p>
+    <p class="muted">Saving settings and the Send/Run buttons require the shared MML settings password (ask your admin). The agent checks it with the dashboard &mdash; it is never stored on this machine. Remembered for this browser session.</p>
   </div>
 
   <div class="card">
@@ -119,10 +119,10 @@ const PAGE = `<!doctype html>
 const H = { 'Content-Type': 'application/json', 'X-Requested-With': 'mml-settings' };
 let current = {};
 
-// Headers for mutating calls: include the settings token the user entered.
+// Headers for mutating calls: include the settings password the user entered.
 function authHeaders() {
-  const tok = (document.getElementById('settingsToken').value || '').trim();
-  return tok ? Object.assign({}, H, { 'X-Settings-Token': tok }) : H;
+  const pw = (document.getElementById('settingsPassword').value || '').trim();
+  return pw ? Object.assign({}, H, { 'X-Settings-Password': pw }) : H;
 }
 
 function toast(msg, ok) {
@@ -135,7 +135,7 @@ function toggleKey() {
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 function toggleTok() {
-  const el = document.getElementById('settingsToken');
+  const el = document.getElementById('settingsPassword');
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 
@@ -230,10 +230,10 @@ async function load() {
   document.getElementById('schedMin').value = sch.minute ?? 0;
   renderToggles(checks);
   document.getElementById('hostline').textContent = 'Local configuration for ' + (current._hostname || 'this server');
-  // Restore the settings token for this browser session (not from the server).
+  // Restore the settings password for this browser session (not from the server).
   try {
-    const tokEl = document.getElementById('settingsToken');
-    if (!tokEl.value) tokEl.value = sessionStorage.getItem('mml_settings_token') || '';
+    const pwEl = document.getElementById('settingsPassword');
+    if (!pwEl.value) pwEl.value = sessionStorage.getItem('mml_settings_password') || '';
   } catch {}
 }
 
@@ -298,8 +298,8 @@ async function save() {
 
 function rememberToken() {
   try {
-    const tok = (document.getElementById('settingsToken').value || '').trim();
-    if (tok) sessionStorage.setItem('mml_settings_token', tok);
+    const pw = (document.getElementById('settingsPassword').value || '').trim();
+    if (pw) sessionStorage.setItem('mml_settings_password', pw);
   } catch {}
 }
 

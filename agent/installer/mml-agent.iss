@@ -27,7 +27,7 @@
   #error You must pass /DApiUrl=<worker url> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.6"
+  #define AppVersion "0.3.7"
 #endif
 
 #define AppName "MML Server Agent"

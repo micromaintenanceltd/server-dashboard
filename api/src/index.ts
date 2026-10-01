@@ -787,6 +787,37 @@ app.post('/api/report', async (c) => {
   return c.json({ ok: true, received_at: reportedAt, decommission });
 });
 
+// --- POST /api/verify-settings-password -----------------------------------
+// An agent calls this (with its per-server key) to check the settings password
+// a technician typed on the local settings page, against the SETTINGS_PASSWORD
+// secret. The password itself never lives on the agent or on disk.
+app.post('/api/verify-settings-password', async (c) => {
+  if (await rateLimited(c, 'verifypw')) {
+    return c.json({ ok: false, error: 'Too many attempts. Please wait a moment.' }, 429);
+  }
+  const auth = c.req.header('Authorization') || '';
+  const rawKey = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!rawKey) return c.json({ ok: false, error: 'Missing Bearer API key.' }, 401);
+  const hash = await hashApiKey(rawKey);
+  const server = await c.env.DB.prepare(`SELECT id FROM servers WHERE api_key_hash = ?1`)
+    .bind(hash)
+    .first<{ id: string }>();
+  if (!server) return c.json({ ok: false, error: 'Invalid API key.' }, 401);
+
+  let body: { password?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Body must be valid JSON.' }, 400);
+  }
+  const expected = c.env.SETTINGS_PASSWORD || '';
+  if (!expected) {
+    return c.json({ ok: false, error: 'No settings password is configured on the server.' }, 400);
+  }
+  const ok = secretEquals(String(body.password || ''), expected);
+  return c.json({ ok });
+});
+
 // --- DELETE /api/self : agent deregisters its own record ------------------
 // Authenticated by the per-server key. Called by the uninstaller (manual or
 // decommission) so a removed agent disappears from the dashboard. IP-allowlist
