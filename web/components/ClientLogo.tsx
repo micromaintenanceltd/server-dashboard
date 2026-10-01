@@ -1,9 +1,10 @@
 'use client';
 
-// Shows a client's company logo next to a device. Until per-company logo upload
-// is wired up (and for clients without a logo), it falls back to a tidy
-// initials badge in the brand colour. `logoUrl` will be supplied once logos are
-// stored; passing it renders the image instead of initials.
+import { useClientLogos } from './ClientLogosProvider';
+
+// Shows a client's company logo next to a device. If the company has an
+// uploaded logo it renders that; otherwise it falls back to a tidy initials
+// badge in the brand colour. An explicit `logoUrl` overrides the lookup.
 export function ClientLogo({
   client,
   logoUrl,
@@ -13,7 +14,9 @@ export function ClientLogo({
   logoUrl?: string | null;
   size?: number;
 }) {
+  const { logos } = useClientLogos();
   const name = (client || '').trim();
+  const resolved = logoUrl ?? (name ? logos[name] : undefined) ?? null;
   const initials =
     name
       .split(/\s+/)
@@ -23,11 +26,11 @@ export function ClientLogo({
       .join('')
       .toUpperCase() || '?';
 
-  if (logoUrl) {
+  if (resolved) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={logoUrl}
+        src={resolved}
         alt={name ? `${name} logo` : 'Company logo'}
         className="shrink-0 rounded-md border border-slate-200 bg-white object-contain p-0.5"
         style={{ width: size, height: size }}

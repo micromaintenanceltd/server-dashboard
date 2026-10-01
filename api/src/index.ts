@@ -53,6 +53,12 @@ async function ensureSchema(db: D1Database): Promise<void> {
     // Users table for the built-in login system. Use prepare().run() (one
     // statement, no trailing semicolon) - remote D1's exec() is unreliable here.
     await db.prepare(USERS_SCHEMA.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim()).run();
+    // Per-company logos (keyed by client name) shown next to each device.
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS client_logos (client_name TEXT PRIMARY KEY, data_url TEXT NOT NULL, updated_at TEXT NOT NULL)`
+      )
+      .run();
     schemaEnsured = true;
   } catch {
     // Leave unensured so a later request retries (e.g. table not created yet).
@@ -103,6 +109,59 @@ async function requireAdmin(c: any): Promise<UserRow | Response> {
 
 app.get('/', (c) => c.text('MML Server Dashboard API'));
 app.get('/api/health', (c) => c.json({ ok: true, service: 'mml-dashboard-api' }));
+
+// ==========================================================================
+// Per-company logos (shown next to each device). Keyed by client name.
+// Read: any signed-in user. Write: admin only. Logos are stored as small
+// base64 image data URLs (the dashboard resizes before upload).
+// ==========================================================================
+
+const MAX_LOGO_CHARS = 256 * 1024; // ~190 KB image; UI resizes to ~128px first
+const LOGO_DATA_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+app.get('/api/client-logos', async (c) => {
+  const u = await requireUser(c);
+  if (u instanceof Response) return u;
+  const { results } = await c.env.DB.prepare(
+    'SELECT client_name, data_url FROM client_logos'
+  ).all<{ client_name: string; data_url: string }>();
+  const logos: Record<string, string> = {};
+  for (const row of results ?? []) logos[row.client_name] = row.data_url;
+  return c.json({ logos });
+});
+
+app.post('/api/client-logos', async (c) => {
+  const u = await requireAdmin(c);
+  if (u instanceof Response) return u;
+  let body: { client_name?: string; data_url?: string | null };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const client = (body.client_name || '').trim();
+  if (!client) return c.json({ error: 'client_name is required.' }, 400);
+
+  // Empty/null data_url clears the logo.
+  if (body.data_url == null || body.data_url === '') {
+    await c.env.DB.prepare('DELETE FROM client_logos WHERE client_name = ?1').bind(client).run();
+    return c.json({ ok: true, deleted: client });
+  }
+  const dataUrl = body.data_url;
+  if (typeof dataUrl !== 'string' || !LOGO_DATA_URL.test(dataUrl)) {
+    return c.json({ error: 'data_url must be a base64 PNG/JPEG/WebP data URL.' }, 400);
+  }
+  if (dataUrl.length > MAX_LOGO_CHARS) {
+    return c.json({ error: 'Logo is too large (max ~190 KB after resize).' }, 413);
+  }
+  await c.env.DB.prepare(
+    `INSERT INTO client_logos (client_name, data_url, updated_at) VALUES (?1, ?2, ?3)
+     ON CONFLICT(client_name) DO UPDATE SET data_url = excluded.data_url, updated_at = excluded.updated_at`
+  )
+    .bind(client, dataUrl, new Date().toISOString())
+    .run();
+  return c.json({ ok: true, client_name: client });
+});
 
 // ==========================================================================
 // Authentication (built-in login: password + optional TOTP MFA, roles)

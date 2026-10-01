@@ -1,15 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchServers,
   createServer,
   deleteServer,
   decommissionServer,
   rotateKey,
+  saveClientLogo,
 } from '@/lib/api';
 import type { ServerListItem } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ClientLogo } from '@/components/ClientLogo';
+import { useClientLogos } from '@/components/ClientLogosProvider';
+import { fileToLogoDataUrl } from '@/lib/image';
 import { relativeAge } from '@/lib/format';
 
 export default function AdminPage() {
@@ -39,8 +43,10 @@ export default function AdminPage() {
   return (
     <div className="px-8 py-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Devices</h1>
-        <p className="text-sm text-slate-500">Provision devices and manage their API keys.</p>
+        <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
+        <p className="text-sm text-slate-500">
+          Provision devices, manage their API keys, and set company logos.
+        </p>
       </header>
 
       {error && (
@@ -101,7 +107,120 @@ export default function AdminPage() {
           </table>
         )}
       </section>
+
+      {/* Company logos */}
+      <LogosSection servers={servers} onError={setError} />
     </div>
+  );
+}
+
+function LogosSection({
+  servers,
+  onError,
+}: {
+  servers: ServerListItem[];
+  onError: (m: string) => void;
+}) {
+  const { logos, refresh } = useClientLogos();
+  const [busy, setBusy] = useState<string | null>(null);
+  const clients = Array.from(new Set(servers.map((s) => s.client_name).filter(Boolean))).sort();
+
+  if (clients.length === 0) return null;
+
+  async function upload(client: string, file: File) {
+    setBusy(client);
+    onError('');
+    try {
+      const dataUrl = await fileToLogoDataUrl(file);
+      await saveClientLogo(client, dataUrl);
+      await refresh();
+    } catch (err: any) {
+      onError(err.message || 'Logo upload failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove(client: string) {
+    setBusy(client);
+    onError('');
+    try {
+      await saveClientLogo(client, null);
+      await refresh();
+    } catch (err: any) {
+      onError(err.message || 'Could not remove the logo.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="card mt-6 overflow-hidden">
+      <div className="panel-header border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+        Company logos
+      </div>
+      <p className="px-4 pt-3 text-xs text-slate-500">
+        A logo appears next to every device belonging to that company. Images are resized small
+        automatically.
+      </p>
+      <ul className="divide-y divide-slate-100">
+        {clients.map((c) => (
+          <LogoRow
+            key={c}
+            client={c}
+            hasLogo={!!logos[c]}
+            busy={busy === c}
+            onUpload={(f) => upload(c, f)}
+            onRemove={() => remove(c)}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function LogoRow({
+  client,
+  hasLogo,
+  busy,
+  onUpload,
+  onRemove,
+}: {
+  client: string;
+  hasLogo: boolean;
+  busy: boolean;
+  onUpload: (f: File) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <ClientLogo client={client} size={40} />
+      <div className="min-w-0 flex-1 truncate font-medium text-slate-800">{client}</div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onUpload(f);
+          e.target.value = '';
+        }}
+      />
+      <button className="btn-ghost px-3 py-1.5" disabled={busy} onClick={() => inputRef.current?.click()}>
+        {busy ? 'Saving…' : hasLogo ? 'Replace' : 'Upload'}
+      </button>
+      {hasLogo && (
+        <button
+          className="text-xs font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
+          disabled={busy}
+          onClick={onRemove}
+        >
+          Remove
+        </button>
+      )}
+    </li>
   );
 }
 

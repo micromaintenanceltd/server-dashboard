@@ -184,3 +184,16 @@ export async function rotateKey(
 ): Promise<{ server_id: string; api_key: string; note: string }> {
   return request(`/api/servers/${encodeURIComponent(id)}/rotate-key`, { method: 'POST', body: {} });
 }
+
+// --- Per-company logos ---
+
+export async function fetchClientLogos(): Promise<{ logos: Record<string, string> }> {
+  return request('/api/client-logos');
+}
+// Pass data_url = null to clear a company's logo.
+export async function saveClientLogo(
+  client_name: string,
+  data_url: string | null
+): Promise<{ ok: boolean }> {
+  return request('/api/client-logos', { method: 'POST', body: { client_name, data_url } });
+}

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { fetchMe, getToken, clearToken } from '@/lib/api';
 import type { AuthUser } from '@/lib/types';
 import { Sidebar } from './Sidebar';
+import { ClientLogosProvider } from './ClientLogosProvider';
 
 interface AuthCtx {
   user: AuthUser | null;
@@ -118,14 +119,14 @@ function Shell({
   if (pathname === '/login') return <>{children}</>;
   if (!user) return <Splash>Redirecting to sign in...</Splash>;
   return (
-    <>
+    <ClientLogosProvider>
       <Sidebar user={user} onSignOut={signOut} collapsed={collapsed} onToggle={toggleCollapsed} />
       <main
         className={`min-h-screen transition-[margin] duration-200 ${collapsed ? 'ml-16' : 'ml-60'}`}
       >
         {children}
       </main>
-    </>
+    </ClientLogosProvider>
   );
 }
 
