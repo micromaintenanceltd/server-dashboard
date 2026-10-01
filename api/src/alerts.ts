@@ -286,10 +286,14 @@ export function buildMessage(
     return bad
       ? {
           severity: 'critical',
-          title: `Critical service stopped: ${o.serverName}`,
-          lines: [who, o.detail ? `Stopped: ${o.detail}` : 'A watched critical service is stopped.'],
+          title: `Critical service stopped${o.detail ? ` (${o.detail})` : ''}: ${o.serverName}`,
+          lines: [who, o.detail ? `Service stopped: ${o.detail}` : 'A watched critical service is stopped.'],
         }
-      : { severity: 'good', title: `Critical services restored: ${o.serverName}`, lines: [who, 'Watched critical services are running again.'] };
+      : {
+          severity: 'good',
+          title: `Critical service restored${o.detail ? ` (${o.detail})` : ''}: ${o.serverName}`,
+          lines: [who, o.detail ? `Service running again: ${o.detail}` : 'Watched critical services are running again.'],
+        };
   }
   // check
   return bad
@@ -313,6 +317,9 @@ export async function evaluateAlert(
     kind: AlertKind;
     bad: boolean;
     detail?: string;
+    // Row key in alert_state. Defaults to `kind`; pass a distinct value (e.g.
+    // `crit:Spooler`) to track several conditions of the same kind separately.
+    stateKey?: string;
   }
 ): Promise<void> {
   const enabled =
@@ -323,9 +330,10 @@ export async function evaluateAlert(
         : cfg.on_check_fail;
   if (!enabled) return;
 
+  const key = opts.stateKey || opts.kind;
   const row = await db
     .prepare('SELECT active, ref FROM alert_state WHERE server_id = ?1 AND kind = ?2')
-    .bind(opts.serverId, opts.kind)
+    .bind(opts.serverId, key)
     .first<{ active: number; ref: string | null }>();
   const wasActive = !!(row && row.active);
 
@@ -348,6 +356,6 @@ export async function evaluateAlert(
       `INSERT INTO alert_state (server_id, kind, active, ref, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
        ON CONFLICT(server_id, kind) DO UPDATE SET active = excluded.active, ref = excluded.ref, updated_at = excluded.updated_at`
     )
-    .bind(opts.serverId, opts.kind, opts.bad ? 1 : 0, ref, new Date().toISOString())
+    .bind(opts.serverId, key, opts.bad ? 1 : 0, ref, new Date().toISOString())
     .run();
 }

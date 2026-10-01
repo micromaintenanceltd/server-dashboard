@@ -757,6 +757,7 @@ app.post('/api/report', async (c) => {
     (async () => {
       try {
         const cfg = await loadAlertConfig(c.env.DB);
+        // A report means the device is online -> clear any offline alert.
         await evaluateAlert(c.env.DB, cfg, {
           serverId: server.id,
           serverName: server.name,
@@ -764,14 +765,39 @@ app.post('/api/report', async (c) => {
           kind: 'offline',
           bad: false,
         });
-        await evaluateAlert(c.env.DB, cfg, {
-          serverId: server.id,
-          serverName: server.name,
-          clientName: server.client_name,
-          kind: 'crit',
-          bad: stopped.length > 0,
-          detail: stopped.join(', '),
-        });
+        // Critical-service-stopped is tracked PER SERVICE (stateKey crit:<name>)
+        // so each stopped service alerts and recovers independently.
+        for (const name of stopped) {
+          await evaluateAlert(c.env.DB, cfg, {
+            serverId: server.id,
+            serverName: server.name,
+            clientName: server.client_name,
+            kind: 'crit',
+            stateKey: `crit:${name}`,
+            bad: true,
+            detail: name,
+          });
+        }
+        // Recover any previously-stopped critical service no longer in the list.
+        const activeCrit = await c.env.DB.prepare(
+          `SELECT kind FROM alert_state WHERE server_id = ?1 AND kind LIKE 'crit:%' AND active = 1`
+        )
+          .bind(server.id)
+          .all<{ kind: string }>();
+        for (const row of activeCrit.results ?? []) {
+          const svc = row.kind.slice('crit:'.length);
+          if (!stopped.includes(svc)) {
+            await evaluateAlert(c.env.DB, cfg, {
+              serverId: server.id,
+              serverName: server.name,
+              clientName: server.client_name,
+              kind: 'crit',
+              stateKey: row.kind,
+              bad: false,
+              detail: svc,
+            });
+          }
+        }
       } catch {
         // alerts must never affect ingest
       }
