@@ -96,6 +96,15 @@ function ServerDetailInner() {
   const meta = (latest_report?.meta ?? {}) as Record<string, any>;
   const services = latest_report?.services;
   const reboot = (meta.reboot ?? {}) as Record<string, any>;
+  // Boot time: use the event-log value (0.4.5+) if present, otherwise derive it
+  // from the uptime every agent reports (so the row shows on all versions).
+  const bootAt: string | null =
+    (reboot.last_boot_at as string) ||
+    (latest_report && latest_report.uptime_seconds != null && latest_report.reported_at
+      ? new Date(
+          Date.parse(latest_report.reported_at) - (latest_report.uptime_seconds ?? 0) * 1000
+        ).toISOString()
+      : null);
   const pendingList: any[] = Array.isArray(patch.pending_list) ? patch.pending_list : [];
 
   return (
@@ -160,10 +169,8 @@ function ServerDetailInner() {
             {meta.hostname ? `${meta.hostname} · ` : ''}
             {meta.os_version || ''}
           </div>
-          {reboot.last_boot_at && (
-            <div className="mt-1 text-xs text-slate-400">
-              since {formatUkDateTime(reboot.last_boot_at)}
-            </div>
+          {bootAt && (
+            <div className="mt-1 text-xs text-slate-400">since {formatUkDateTime(bootAt)}</div>
           )}
         </MetricCard>
       </section>
@@ -180,18 +187,16 @@ function ServerDetailInner() {
         <div className="card overflow-visible p-5 lg:col-span-2">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Uptime history</h2>
           <UptimeCalendar serverId={server.id} />
-          {(reboot.last_boot_at || reboot.reason) && (
+          {bootAt && (
             <div className="mt-4 border-t border-slate-100 pt-3">
               <div className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Last restart
                 </span>
-                {reboot.last_boot_at && (
-                  <span className="text-sm text-slate-600">
-                    {formatUkDateTime(reboot.last_boot_at)}{' '}
-                    <span className="text-slate-400">({relativeAge(reboot.last_boot_at)})</span>
-                  </span>
-                )}
+                <span className="text-sm text-slate-600">
+                  {formatUkDateTime(bootAt)}{' '}
+                  <span className="text-slate-400">({relativeAge(bootAt)})</span>
+                </span>
               </div>
               {reboot.reason && <p className="mt-1 text-xs text-slate-500">{reboot.reason}</p>}
             </div>
