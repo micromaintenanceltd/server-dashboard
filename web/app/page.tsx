@@ -66,16 +66,26 @@ export default function DashboardPage() {
             Overview · auto refresh every {POLL_MS / 1000}s · last updated{' '}
             {relativeAge(new Date(lastRefresh).toISOString())}
           </p>
-          <div className="mt-2 flex items-center gap-2">
-            <button onClick={load} className="btn-ghost px-3 py-1.5">
-              Refresh
-            </button>
-            <Link href="/kiosk" className="btn-ghost px-3 py-1.5">
-              TV / Kiosk
-            </Link>
-          </div>
         </div>
-        <Clock size="lg" />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={load}
+            title="Refresh"
+            aria-label="Refresh"
+            className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          >
+            <RefreshIcon />
+          </button>
+          <Link
+            href="/kiosk"
+            title="Kiosk / TV mode"
+            aria-label="Kiosk / TV mode"
+            className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          >
+            <MonitorIcon />
+          </Link>
+          <Clock size="lg" />
+        </div>
       </header>
 
       {error && (
@@ -385,6 +395,25 @@ function countChecks(servers: ServerListItem[]): Record<CheckStatus | 'none', nu
     else out[s.latest_check.overall_status]++;
   }
   return out;
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+      <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+function MonitorIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  );
 }
 
 function pingsDown(s: ServerListItem): number {
