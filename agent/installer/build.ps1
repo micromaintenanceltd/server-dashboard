@@ -54,6 +54,19 @@ Require-Value $ApiUrl "ApiUrl (MML_API_URL)"
 $agentExe = Join-Path $agentRoot "dist\mml-agent.exe"
 $winsw = Join-Path $here "vendor\mml-agent-service.exe"
 
+# --- 0. Keep package.json in lockstep with the build version ----------------
+# The agent reports its own version from package.json, and the auto-updater
+# compares that against the published version. If they drift, a self-updated
+# agent would keep seeing itself as older and re-install in a loop. Sync the
+# first "version" field only, preserving the file's formatting.
+$pkgPath = Join-Path $agentRoot "package.json"
+$pkgRaw = Get-Content $pkgPath -Raw
+$pkgNew = [regex]::Replace($pkgRaw, '("version"\s*:\s*")[^"]*(")', "`${1}$Version`${2}", 1)
+if ($pkgNew -ne $pkgRaw) {
+  Write-Host "==> Syncing package.json version -> $Version" -ForegroundColor Cyan
+  Set-Content -Path $pkgPath -Value $pkgNew -NoNewline -Encoding utf8
+}
+
 # --- 1. Build the agent exe -------------------------------------------------
 Write-Host "==> Building agent exe with pkg..." -ForegroundColor Cyan
 Push-Location $agentRoot
