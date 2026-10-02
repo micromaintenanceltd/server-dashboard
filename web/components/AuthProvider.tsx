@@ -135,6 +135,8 @@ function Shell({
   if (loading) return <Splash>Loading...</Splash>;
   if (pathname === '/login') return <>{children}</>;
   if (!user) return <Splash>Redirecting to sign in...</Splash>;
+  // Kiosk / TV mode: authenticated, but full-bleed with no sidebar chrome.
+  if (pathname === '/kiosk') return <ClientLogosProvider>{children}</ClientLogosProvider>;
 
   // On phones/tablets the sidebar is a slide-in drawer (always full width when
   // open); the collapse-to-icons preference only applies on desktop (lg+).

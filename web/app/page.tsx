@@ -66,9 +66,14 @@ export default function DashboardPage() {
             Overview · auto refresh every {POLL_MS / 1000}s · last updated{' '}
             {relativeAge(new Date(lastRefresh).toISOString())}
           </p>
-          <button onClick={load} className="btn-ghost mt-2 px-3 py-1.5">
-            Refresh
-          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <button onClick={load} className="btn-ghost px-3 py-1.5">
+              Refresh
+            </button>
+            <Link href="/kiosk" className="btn-ghost px-3 py-1.5">
+              TV / Kiosk
+            </Link>
+          </div>
         </div>
         <Clock size="lg" />
       </header>
