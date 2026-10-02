@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchServers } from '@/lib/api';
 import type { ServerListItem, ServersResponse, ServerStatus, CheckStatus } from '@/lib/types';
 import { StatusBadge, StatusDot } from '@/components/StatusBadge';
-import { UsageBar } from '@/components/UsageBar';
+import { Dial } from '@/components/Dial';
 import { relativeAge, formatMb, CHECK_META } from '@/lib/format';
 import { ClientLogo } from '@/components/ClientLogo';
 
@@ -130,7 +130,7 @@ function DevicesInner() {
           </Link>
         </div>
       ) : view === 'tile' ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {servers.map((s) => (
             <ServerCard key={s.id} server={s} />
           ))}
@@ -443,23 +443,23 @@ function ServerCard({ server }: { server: ServerListItem }) {
   const ramPercent =
     latest && latest.ram_total_mb ? ((latest.ram_used_mb ?? 0) / latest.ram_total_mb) * 100 : null;
   const stoppedCritical = latest?.services?.stopped_critical ?? [];
-  const worstDisk = worstDiskUsedPercent(latest?.disk ?? []);
+  const disks = latest?.disk ?? [];
 
   return (
-    <Link href={`/server/?id=${encodeURIComponent(server.id)}`} className="card card-hover block p-4">
+    <Link href={`/server/?id=${encodeURIComponent(server.id)}`} className="card card-hover block p-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <ClientLogo client={server.client_name} size={36} />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ClientLogo client={server.client_name} size={30} />
           <div className="min-w-0">
-            <div className="truncate font-semibold text-slate-900">{server.name}</div>
-            <div className="truncate text-sm text-slate-500">
+            <div className="truncate text-sm font-semibold text-slate-900">{server.name}</div>
+            <div className="truncate text-xs text-slate-500">
               {server.client_name}
               {server.location ? ` · ${server.location}` : ''}
             </div>
           </div>
         </div>
         {server.desired_state === 'decommission' ? (
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+          <span className="inline-flex items-center whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
             Decommissioning
           </span>
         ) : (
@@ -467,55 +467,57 @@ function ServerCard({ server }: { server: ServerListItem }) {
         )}
       </div>
 
-      <div className="mt-4 space-y-3">
-        <UsageBar
+      {/* CPU, RAM, then one dial per disk (wraps if there are several). */}
+      <div className="mt-3 flex flex-wrap items-start justify-center gap-x-4 gap-y-2">
+        <Dial
           percent={latest?.cpu_percent ?? null}
           label="CPU"
-          sublabel={latest?.cpu_percent != null ? `${latest.cpu_percent}%` : 'n/a'}
+          title={latest?.cpu_percent != null ? `CPU ${latest.cpu_percent}%` : 'CPU: no data'}
         />
-        <UsageBar
+        <Dial
           percent={ramPercent}
           label="RAM"
-          sublabel={
+          title={
             latest && latest.ram_total_mb
-              ? `${formatMb(latest.ram_used_mb)} / ${formatMb(latest.ram_total_mb)}`
-              : 'n/a'
+              ? `RAM ${formatMb(latest.ram_used_mb)} / ${formatMb(latest.ram_total_mb)}`
+              : 'RAM: no data'
           }
         />
-        <UsageBar
-          percent={worstDisk?.percent ?? null}
-          label={worstDisk ? `Disk ${worstDisk.mount}` : 'Disk'}
-          sublabel={worstDisk ? `${worstDisk.percent}% used` : 'n/a'}
-        />
+        {disks.map((d) => {
+          const usedPct =
+            d.total_gb > 0
+              ? (d.used_gb / d.total_gb) * 100
+              : d.free_percent != null
+                ? 100 - d.free_percent
+                : null;
+          return (
+            <Dial
+              key={d.mount}
+              percent={usedPct}
+              label={d.mount}
+              title={`${d.mount} ${Math.round(d.used_gb)} / ${Math.round(d.total_gb)} GB used`}
+            />
+          );
+        })}
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>
-          Last seen {relativeAge(server.last_seen_at)}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+        <span className="truncate">
+          {relativeAge(server.last_seen_at)}
           {server.agent_version ? ` · v${server.agent_version}` : ''}
         </span>
-        {stoppedCritical.length > 0 && (
-          <span className="inline-flex items-center gap-1 font-medium text-status-offline">
+        {stoppedCritical.length > 0 ? (
+          <span className="inline-flex shrink-0 items-center gap-1 font-medium text-status-offline">
             <WarnIcon />
-            {stoppedCritical.length} critical stopped
+            {stoppedCritical.length} critical
           </span>
-        )}
-      </div>
-
-      <div className="mt-2 flex items-center gap-1.5 border-t border-slate-100 pt-2 text-xs text-slate-500">
-        {server.latest_check ? (
-          <>
+        ) : server.latest_check ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${CHECK_META[server.latest_check.overall_status].dot}`} />
-            <span>
-              Weekly check: {CHECK_META[server.latest_check.overall_status].label}
-              {server.latest_check.fail_count + server.latest_check.warn_count > 0
-                ? ` (${server.latest_check.fail_count} fail, ${server.latest_check.warn_count} warn)`
-                : ''}
-            </span>
-            <span className="ml-auto">{relativeAge(server.latest_check.run_at)}</span>
-          </>
+            {CHECK_META[server.latest_check.overall_status].label}
+          </span>
         ) : (
-          <span className="text-slate-400">No weekly check yet</span>
+          <span className="shrink-0 text-slate-400">No check</span>
         )}
       </div>
     </Link>
