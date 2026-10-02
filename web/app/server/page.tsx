@@ -168,22 +168,6 @@ function ServerDetailInner() {
         </MetricCard>
       </section>
 
-      {/* Last restart (time + reason from the event log) */}
-      {(reboot.last_boot_at || reboot.reason) && (
-        <section className="card mb-6 p-4">
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-sm font-semibold text-slate-800">Last restart</span>
-            {reboot.last_boot_at && (
-              <span className="text-sm text-slate-600">
-                {formatUkDateTime(reboot.last_boot_at)}{' '}
-                <span className="text-slate-400">({relativeAge(reboot.last_boot_at)})</span>
-              </span>
-            )}
-          </div>
-          {reboot.reason && <p className="mt-1 text-xs text-slate-500">{reboot.reason}</p>}
-        </section>
-      )}
-
       {/* Weekly checks (near the top) */}
       <section className="mb-6">
         <Panel title="Weekly checks">
@@ -196,6 +180,22 @@ function ServerDetailInner() {
         <div className="card overflow-visible p-5 lg:col-span-2">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Uptime history</h2>
           <UptimeCalendar serverId={server.id} />
+          {(reboot.last_boot_at || reboot.reason) && (
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Last restart
+                </span>
+                {reboot.last_boot_at && (
+                  <span className="text-sm text-slate-600">
+                    {formatUkDateTime(reboot.last_boot_at)}{' '}
+                    <span className="text-slate-400">({relativeAge(reboot.last_boot_at)})</span>
+                  </span>
+                )}
+              </div>
+              {reboot.reason && <p className="mt-1 text-xs text-slate-500">{reboot.reason}</p>}
+            </div>
+          )}
         </div>
         <div className="card p-5">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Internet speed</h2>
