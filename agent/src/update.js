@@ -31,7 +31,7 @@ const { readState, writeState } = require('./lib/state');
 
 const AGENT_VERSION = require('../package.json').version;
 const UPDATE_TASK = 'MMLServerAgentUpdate';
-const SERVICE_NAME = 'MMLServerAgent';
+const SERVICE_NAME = 'MMLServerMonitor';
 const MAX_ATTEMPTS_PER_VERSION = 3; // give up on a version after this many fails
 
 // Compare dotted numeric versions. Returns 1 if a>b, -1 if a<b, 0 if equal.

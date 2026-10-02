@@ -27,12 +27,14 @@
   #error You must pass /DApiUrl=<worker url> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.4.1"
+  #define AppVersion "0.4.3"
 #endif
 
-#define AppName "MML Server Agent"
+#define AppName "MML Server Monitor"
 #define Publisher "Micro Maintenance Limited"
-#define ServiceId "MMLServerAgent"
+#define ServiceId "MMLServerMonitor"
+; The previous service name, removed on upgrade so we don't leave two services.
+#define OldServiceId "MMLServerAgent"
 
 [Setup]
 AppId={{4C6F2C1E-3B2A-4E5D-9F7A-2B9E1D6A7C01}
@@ -72,8 +74,17 @@ Source: "vendor\mml-agent-service.exe";   DestDir: "{app}"; Flags: ignoreversion
 Source: "mml-agent-service.xml";          DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
-; On upgrade only: remove the old service registration (the service was already
-; stopped before files were copied). Skipped on a fresh install.
+; Migration: remove the OLD "{#OldServiceId}" service (replaced by
+; "{#ServiceId}"). It was already stopped before files were copied. These are
+; harmless no-ops if the old service isn't present. sc.exe delete removes the
+; SCM registration; WinSW can't do it here because it now targets the new name.
+Filename: "{sys}\net.exe"; Parameters: "stop {#OldServiceId}"; \
+  Flags: runhidden waituntilterminated
+Filename: "{sys}\sc.exe"; Parameters: "delete {#OldServiceId}"; \
+  Flags: runhidden waituntilterminated
+
+; On upgrade only: remove any existing "{#ServiceId}" registration (e.g. a
+; previous run of this installer) before re-registering it below.
 Filename: "{app}\mml-agent-service.exe"; Parameters: "uninstall"; \
   Check: IsUpgradeCheck; Flags: runhidden waituntilterminated
 
@@ -95,10 +106,10 @@ Filename: "{sys}\icacls.exe"; \
 
 ; Install (or re-register) the service on the new binaries, and start it.
 Filename: "{app}\mml-agent-service.exe"; Parameters: "install"; \
-  StatusMsg: "Installing the MML Server Agent service..."; \
+  StatusMsg: "Installing the MML Server Monitor service..."; \
   Flags: runhidden waituntilterminated
 Filename: "{app}\mml-agent-service.exe"; Parameters: "start"; \
-  StatusMsg: "Starting the MML Server Agent service..."; \
+  StatusMsg: "Starting the MML Server Monitor service..."; \
   Flags: runhidden waituntilterminated
 
 [UninstallRun]
@@ -171,11 +182,15 @@ var
 begin
   if CurStep = ssInstall then
   begin
-    { Stop the service and wait for it to terminate (net.exe returns once the
-      SCM reports STOPPED). A second call is harmless if already stopped. Then
-      pause to let file handles - including an AV scanner's - be released before
-      Setup replaces the binaries. With CloseApplications=no, Setup will not try
-      to close the agent itself, so this is the only thing freeing the files. }
+    { Stop both the OLD and NEW service names and wait for each to terminate
+      (net.exe returns once the SCM reports STOPPED). The old "{#OldServiceId}"
+      holds the binaries on a box being migrated, so it must be stopped before
+      Setup replaces them. Both calls are harmless if the service isn't present.
+      Then pause to let file handles - including an AV scanner's - be released.
+      With CloseApplications=no, Setup will not try to close the agent itself, so
+      this is the only thing freeing the files. }
+    Exec(ExpandConstant('{sys}\net.exe'), 'stop {#OldServiceId}', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
     Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceId}', '', SW_HIDE,
       ewWaitUntilTerminated, ResultCode);
     Sleep(5000);

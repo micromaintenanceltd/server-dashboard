@@ -14,8 +14,8 @@
   access only; it opens no inbound network access.
 -->
 <service>
-  <id>MMLServerAgent</id>
-  <name>MML Server Agent</name>
+  <id>MMLServerMonitor</id>
+  <name>MML Server Monitor</name>
   <description>Micro Maintenance server monitoring agent. Reports server health to the MML dashboard over outbound HTTPS.</description>
 
   <executable>%BASE%\mml-agent.exe</executable>
