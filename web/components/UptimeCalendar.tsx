@@ -97,13 +97,18 @@ export function UptimeCalendar({ serverId }: { serverId: string }) {
       </div>
 
       <div className="flex gap-1">
-        {days.map((d, i) => (
+        {days.map((d, i) => {
+          // Keep the popover on-screen: anchor left near the start, right near
+          // the end, centred in the middle.
+          const posCls =
+            i < 4 ? 'left-0' : i >= days.length - 4 ? 'right-0' : 'left-1/2 -translate-x-1/2';
+          return (
           <div key={i} className="group relative flex-1">
             <div
               className={`h-9 rounded-sm ${COLOUR[d.status]} cursor-pointer transition-transform hover:scale-y-110`}
             />
             {/* Hover popover with that day's detail. */}
-            <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-60 max-w-[70vw] -translate-x-1/2 group-hover:block">
+            <div className={`pointer-events-none absolute bottom-full z-20 mb-2 hidden w-60 max-w-[70vw] group-hover:block ${posCls}`}>
               <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-lg">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="font-semibold text-slate-800">{fmtDay(d.start)}</span>
@@ -128,11 +133,10 @@ export function UptimeCalendar({ serverId }: { serverId: string }) {
                   </ul>
                 )}
               </div>
-              {/* little arrow */}
-              <div className="mx-auto h-2 w-2 -translate-y-1 rotate-45 border-b border-r border-slate-200 bg-white" />
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-1.5 flex items-center justify-between">
