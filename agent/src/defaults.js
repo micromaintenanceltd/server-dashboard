@@ -15,6 +15,11 @@ module.exports = {
   // Local settings web page, served on loopback only (127.0.0.1).
   settings: { enabled: true, port: 8000 },
 
+  // Automatic agent updates. When enabled, the agent checks the dashboard daily
+  // for an admin-approved newer version, verifies its SHA-256, and installs it.
+  // Turn off ("Automatic updates" tickbox) to pin a server to its current build.
+  update: { enabled: true, hour: 3, minute: 0 },
+
   // Weekly check run configuration. Runs once a week at the scheduled UK time.
   // Each check is ticked on/off per server in the local settings page
   // ("enabled"). The client-specific checks default to OFF so each server is

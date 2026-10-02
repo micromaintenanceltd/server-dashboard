@@ -82,6 +82,15 @@ async function ensureSchema(db: D1Database): Promise<void> {
         `CREATE TABLE IF NOT EXISTS alert_state (server_id TEXT NOT NULL, kind TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, ref TEXT, updated_at TEXT, PRIMARY KEY (server_id, kind))`
       )
       .run();
+    // Agent auto-update control plane: a single row holding the latest published
+    // agent version plus whether it is approved for rollout (enabled). Servers
+    // read this (when enabled) to self-update; publishing sets enabled=0 so a new
+    // version is never deployed until an admin approves it.
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS agent_release (id INTEGER PRIMARY KEY, version TEXT, download_url TEXT, sha256 TEXT, enabled INTEGER NOT NULL DEFAULT 0, notes TEXT, updated_at TEXT)`
+      )
+      .run();
     // Columns added after the alert tables first shipped (Freshdesk channel +
     // the ticket-ref on alert_state). Table/column names are fixed literals.
     const addColumns: [string, string][] = [
@@ -1479,6 +1488,156 @@ app.post('/api/alert-config/test', async (c) => {
     freshdesk_ticket: freshdeskTicket,
     errors,
   });
+});
+
+// ==========================================================================
+// Agent auto-update control plane
+//   GET  /api/agent/latest          (server key)   -> approved version, if any
+//   POST /api/agent/release         (RELEASE_TOKEN) -> publish a new version
+//   GET  /api/agent/release         (admin)         -> current release + status
+//   POST /api/agent/release/enabled (admin)         -> approve / kill switch
+// ==========================================================================
+
+interface AgentReleaseRow {
+  version: string | null;
+  download_url: string | null;
+  sha256: string | null;
+  enabled: number;
+  notes: string | null;
+  updated_at: string | null;
+}
+
+async function loadAgentRelease(db: D1Database): Promise<AgentReleaseRow | null> {
+  return db
+    .prepare(
+      'SELECT version, download_url, sha256, enabled, notes, updated_at FROM agent_release WHERE id = 1'
+    )
+    .first<AgentReleaseRow>();
+}
+
+// An agent (per-server key) asks which version is approved for rollout. We only
+// reveal the download details when a version is enabled, so a pending (not yet
+// approved) release is invisible to the fleet.
+app.get('/api/agent/latest', async (c) => {
+  const auth = c.req.header('Authorization') || '';
+  const rawKey = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!rawKey) return c.json({ error: 'Missing Bearer API key.' }, 401);
+  const hash = await hashApiKey(rawKey);
+  const server = await c.env.DB.prepare('SELECT id FROM servers WHERE api_key_hash = ?1')
+    .bind(hash)
+    .first<{ id: string }>();
+  if (!server) return c.json({ error: 'Invalid API key.' }, 401);
+
+  const rel = await loadAgentRelease(c.env.DB);
+  if (!rel || !rel.enabled || !rel.version) return c.json({ enabled: false });
+  return c.json({
+    enabled: true,
+    version: rel.version,
+    downloadUrl: rel.download_url,
+    sha256: rel.sha256,
+  });
+});
+
+// Publish a newly-built version. Authenticated with the RELEASE_TOKEN secret
+// (not a dashboard login), so the build script can post without admin creds.
+// A new version is always stored as PENDING (enabled=0): an admin must approve
+// it in the dashboard before any server installs it. Re-publishing the SAME
+// version keeps its current enabled flag (lets you re-upload without un-approving).
+app.post('/api/agent/release', async (c) => {
+  const expected = c.env.RELEASE_TOKEN || '';
+  if (!expected) return c.json({ error: 'Publishing is not configured (no RELEASE_TOKEN).' }, 400);
+  const auth = c.req.header('Authorization') || '';
+  const rawTok = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!rawTok || !secretEquals(rawTok, expected)) {
+    return c.json({ error: 'Invalid release token.' }, 401);
+  }
+
+  let body: { version?: string; downloadUrl?: string; sha256?: string; notes?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const version = String(body.version || '').trim();
+  const downloadUrl = String(body.downloadUrl || '').trim();
+  const sha256 = String(body.sha256 || '').trim().toLowerCase();
+  const notes = typeof body.notes === 'string' ? body.notes.trim() : null;
+
+  if (!/^\d+(\.\d+){1,3}$/.test(version)) {
+    return c.json({ error: 'version must be a dotted numeric version, e.g. 0.3.9.' }, 400);
+  }
+  if (!/^[a-f0-9]{64}$/.test(sha256)) {
+    return c.json({ error: 'sha256 must be a 64-character hex string.' }, 400);
+  }
+  let host = '';
+  try {
+    const u = new URL(downloadUrl);
+    host = u.hostname.toLowerCase();
+    if (u.protocol !== 'https:') throw new Error('not https');
+  } catch {
+    return c.json({ error: 'downloadUrl must be a valid https URL.' }, 400);
+  }
+  const ghOk = host === 'github.com' || host.endsWith('.github.com') || host.endsWith('.githubusercontent.com');
+  if (!ghOk) {
+    return c.json({ error: 'downloadUrl must be a GitHub release URL.' }, 400);
+  }
+
+  const cur = await loadAgentRelease(c.env.DB);
+  // Keep the enabled flag only when re-publishing the exact same version.
+  const keepEnabled = cur && cur.version === version ? cur.enabled : 0;
+
+  await c.env.DB.prepare(
+    `INSERT INTO agent_release (id, version, download_url, sha256, enabled, notes, updated_at)
+     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
+     ON CONFLICT(id) DO UPDATE SET
+       version = excluded.version,
+       download_url = excluded.download_url,
+       sha256 = excluded.sha256,
+       enabled = excluded.enabled,
+       notes = excluded.notes,
+       updated_at = excluded.updated_at`
+  )
+    .bind(version, downloadUrl, sha256, keepEnabled, notes, new Date().toISOString())
+    .run();
+
+  return c.json({ ok: true, version, enabled: !!keepEnabled, pending: !keepEnabled });
+});
+
+// Dashboard: view the current release + approval status.
+app.get('/api/agent/release', async (c) => {
+  const u = await requireAdmin(c);
+  if (u instanceof Response) return u;
+  const rel = await loadAgentRelease(c.env.DB);
+  if (!rel || !rel.version) return c.json({ version: null });
+  return c.json({
+    version: rel.version,
+    downloadUrl: rel.download_url,
+    sha256: rel.sha256,
+    enabled: !!rel.enabled,
+    notes: rel.notes ?? '',
+    updated_at: rel.updated_at,
+  });
+});
+
+// Dashboard: approve the current release for rollout, or disable it (kill switch).
+app.post('/api/agent/release/enabled', async (c) => {
+  const u = await requireAdmin(c);
+  if (u instanceof Response) return u;
+  let body: { enabled?: boolean };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+  const rel = await loadAgentRelease(c.env.DB);
+  if (!rel || !rel.version) return c.json({ error: 'No release has been published yet.' }, 400);
+  const enabled = body.enabled ? 1 : 0;
+  await c.env.DB.prepare(
+    'UPDATE agent_release SET enabled = ?1, updated_at = ?2 WHERE id = 1'
+  )
+    .bind(enabled, new Date().toISOString())
+    .run();
+  return c.json({ ok: true, enabled: !!enabled });
 });
 
 // --- utilities ------------------------------------------------------------

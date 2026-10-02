@@ -28,6 +28,12 @@ export interface Env {
   // POST /api/verify-settings-password, so it lives only here, not on agents.
   // Optional: if unset, agents cannot authorise local settings changes.
   SETTINGS_PASSWORD?: string;
+
+  // Secret bearer token used by the release publisher (build.ps1 -Publish) to
+  // register a newly-built agent version in the dashboard. Publishing records
+  // the version/URL/SHA-256 as PENDING; an admin approves it in the dashboard
+  // before any server installs it. Optional: if unset, publishing is disabled.
+  RELEASE_TOKEN?: string;
 }
 
 // A server row as stored in D1.

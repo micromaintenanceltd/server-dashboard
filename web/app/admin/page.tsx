@@ -11,7 +11,10 @@ import {
   fetchAlertConfig,
   saveAlertConfig,
   testAlert,
+  fetchAgentRelease,
+  setAgentReleaseEnabled,
   type AlertConfigView,
+  type AgentReleaseView,
 } from '@/lib/api';
 import type { ServerListItem } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -117,7 +120,128 @@ export default function AdminPage() {
 
       {/* Alerts */}
       <AlertsSection onError={setError} />
+
+      {/* Agent auto-update */}
+      <AgentUpdateSection onError={setError} />
     </div>
+  );
+}
+
+function AgentUpdateSection({ onError }: { onError: (m: string) => void }) {
+  const [rel, setRel] = useState<AgentReleaseView | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const r = await fetchAgentRelease();
+      setRel(r);
+    } catch (err: any) {
+      onError(err.message || 'Failed to load agent release');
+    } finally {
+      setLoaded(true);
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  async function setEnabled(enabled: boolean) {
+    if (
+      enabled &&
+      !confirm(
+        `Approve agent v${rel?.version} for rollout?\n\n` +
+          `Every device with automatic updates on will download, verify and install it ` +
+          `at its next daily check. You can disable this again at any time (kill switch).`
+      )
+    )
+      return;
+    setBusy(true);
+    onError('');
+    try {
+      await setAgentReleaseEnabled(enabled);
+      await reload();
+    } catch (err: any) {
+      onError(err.message || 'Failed to update rollout');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <section className="card mt-6 overflow-hidden">
+      <div className="panel-header border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+        Agent updates
+      </div>
+      <div className="space-y-4 p-4">
+        {!rel || !rel.version ? (
+          <p className="text-sm text-slate-500">
+            No agent version has been published yet. Publish one from the build machine
+            (<code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">build.ps1 -Publish</code>) and
+            it will appear here for approval.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-sm">
+                <div className="font-semibold text-slate-800">
+                  Latest published: v{rel.version}
+                </div>
+                <div className="text-xs text-slate-500">
+                  Updated {rel.updated_at ? relativeAge(rel.updated_at) : 'recently'} · SHA-256{' '}
+                  <span className="font-mono">{(rel.sha256 || '').slice(0, 12)}…</span>
+                </div>
+              </div>
+              <span
+                className={
+                  'rounded-full px-2.5 py-0.5 text-xs font-medium ' +
+                  (rel.enabled
+                    ? 'border border-emerald-200 bg-emerald-100 text-emerald-800'
+                    : 'border border-amber-200 bg-amber-100 text-amber-800')
+                }
+              >
+                {rel.enabled ? 'Approved — rolling out' : 'Pending approval'}
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              When approved, devices with automatic updates enabled check daily, verify the
+              SHA-256, and install this version. Pin an individual device from its local settings
+              page (untick “Automatic updates”).
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {rel.enabled ? (
+                <button
+                  className="rounded-md border border-red-200 px-3.5 py-2 text-sm font-medium text-status-offline hover:bg-red-50 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => setEnabled(false)}
+                >
+                  {busy ? 'Working…' : 'Disable rollout (kill switch)'}
+                </button>
+              ) : (
+                <button className="btn-primary" disabled={busy} onClick={() => setEnabled(true)}>
+                  {busy ? 'Working…' : `Approve v${rel.version} for rollout`}
+                </button>
+              )}
+              {rel.downloadUrl && (
+                <a
+                  className="text-xs font-medium text-brand-700 hover:underline"
+                  href={rel.downloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download installer
+                </a>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 

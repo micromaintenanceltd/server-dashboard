@@ -21,6 +21,15 @@ param(
   [string]$ApiUrl = $env:MML_API_URL,
   [switch]$Sign,
 
+  # Publish the built installer so servers can auto-update:
+  #   - creates a GitHub Release (tag v<Version>) with the setup.exe attached,
+  #   - registers the version + SHA-256 + download URL with the dashboard as
+  #     PENDING (an admin then approves it on the Admin page before rollout).
+  # Requires: the GitHub CLI (`gh`) signed in, and the dashboard RELEASE_TOKEN.
+  [switch]$Publish,
+  [string]$Repo = "micromaintenanceltd/server-dashboard",
+  [string]$ReleaseToken = $env:MML_RELEASE_TOKEN,
+
   # Azure Trusted Signing parameters (only needed with -Sign). These match the
   # values in your Trusted Signing account.
   [string]$SignToolPath = "signtool.exe",
@@ -104,4 +113,52 @@ Write-Host ""
 Write-Host "Done. Installer: $setupExe" -ForegroundColor Green
 if (-not $Sign) {
   Write-Host "NOTE: built UNSIGNED. Re-run with -Sign once Trusted Signing is configured." -ForegroundColor Yellow
+}
+
+# --- 5. Publish for auto-update (optional) ----------------------------------
+if ($Publish) {
+  Require-Value $ReleaseToken "ReleaseToken (MML_RELEASE_TOKEN)"
+
+  $gh = (Get-Command "gh.exe" -ErrorAction SilentlyContinue).Source
+  if (-not $gh) { throw "GitHub CLI (gh) not found. Install it and run 'gh auth login'." }
+
+  # SHA-256 of the exact file we are publishing - the dashboard records this and
+  # every agent verifies it before installing.
+  $sha = (Get-FileHash -Algorithm SHA256 -Path $setupExe).Hash.ToLower()
+  Write-Host "==> SHA-256: $sha" -ForegroundColor Cyan
+
+  $tag = "v$Version"
+  $assetName = "mml-agent-setup-$Version.exe"
+
+  # Create the release if it doesn't exist, then (re)upload the asset.
+  & $gh release view $tag --repo $Repo *> $null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "==> Creating GitHub release $tag..." -ForegroundColor Cyan
+    & $gh release create $tag "$setupExe#$assetName" --repo $Repo `
+      --title "MML Server Agent $Version" `
+      --notes "Automated release of the MML Server Agent $Version. SHA-256: $sha"
+    if ($LASTEXITCODE -ne 0) { throw "gh release create failed." }
+  } else {
+    Write-Host "==> Release $tag exists; uploading asset (clobber)..." -ForegroundColor Cyan
+    & $gh release upload $tag "$setupExe#$assetName" --repo $Repo --clobber
+    if ($LASTEXITCODE -ne 0) { throw "gh release upload failed." }
+  }
+
+  $downloadUrl = "https://github.com/$Repo/releases/download/$tag/$assetName"
+
+  # Register with the dashboard as PENDING (enabled stays off until an admin
+  # approves it on the Admin page).
+  $body = @{ version = $Version; downloadUrl = $downloadUrl; sha256 = $sha } | ConvertTo-Json
+  $publishUrl = ($ApiUrl.TrimEnd('/')) + "/api/agent/release"
+  Write-Host "==> Registering release with the dashboard..." -ForegroundColor Cyan
+  try {
+    $resp = Invoke-RestMethod -Method Post -Uri $publishUrl -Body $body `
+      -ContentType "application/json" `
+      -Headers @{ Authorization = "Bearer $ReleaseToken" }
+    Write-Host ""
+    Write-Host "Published v$Version. It is PENDING approval." -ForegroundColor Green
+    Write-Host "Approve it on the dashboard Admin page (Agent updates) to roll it out." -ForegroundColor Green
+  } catch {
+    throw "Failed to register release with the dashboard: $($_.Exception.Message)"
+  }
 }

@@ -230,3 +230,20 @@ export async function testAlert(): Promise<{
 }> {
   return request('/api/alert-config/test', { method: 'POST', body: {} });
 }
+
+// --- Agent auto-update (admin) ---
+
+export interface AgentReleaseView {
+  version: string | null;
+  downloadUrl?: string;
+  sha256?: string;
+  enabled?: boolean;
+  notes?: string;
+  updated_at?: string | null;
+}
+export async function fetchAgentRelease(): Promise<AgentReleaseView> {
+  return request('/api/agent/release');
+}
+export async function setAgentReleaseEnabled(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> {
+  return request('/api/agent/release/enabled', { method: 'POST', body: { enabled } });
+}

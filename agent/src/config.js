@@ -71,6 +71,13 @@ function loadConfig() {
   cfg.settings = cfg.settings && typeof cfg.settings === 'object' ? cfg.settings : {};
   cfg.settings.port = Number(cfg.settings.port) > 0 ? Number(cfg.settings.port) : 8000;
 
+  // Auto-update defaults. Enabled unless explicitly turned off (per server).
+  // hour/minute is the local-time daily check slot.
+  cfg.update = cfg.update && typeof cfg.update === 'object' ? cfg.update : {};
+  cfg.update.enabled = cfg.update.enabled !== false;
+  cfg.update.hour = Number.isInteger(cfg.update.hour) ? cfg.update.hour : 3;
+  cfg.update.minute = Number.isInteger(cfg.update.minute) ? cfg.update.minute : 0;
+
   cfg._configPath = configPath;
 
   return cfg;

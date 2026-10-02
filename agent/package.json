@@ -1,6 +1,6 @@
 {
   "name": "mml-server-agent",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "description": "MML server monitoring agent. Collects health data and POSTs it to the dashboard API.",
   "bin": "src/main.js",

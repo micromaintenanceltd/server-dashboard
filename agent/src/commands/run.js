@@ -13,10 +13,20 @@ const { isCheckDue } = require('../lib/schedule');
 const { readState, writeState } = require('../lib/state');
 const { startSettingsServer } = require('../settings/server');
 const { triggerSelfUninstall } = require('../lib/selfUninstall');
+const { checkAndMaybeUpdate, cleanupAfterUpdate } = require('../update');
 const log = require('../logger');
 
 // How often the service re-evaluates whether the weekly check slot is due.
 const CHECK_POLL_MS = 5 * 60_000;
+
+// Milliseconds from now until the next occurrence of hour:minute (local time).
+function msUntilNextLocal(hour, minute) {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(hour, minute, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
 
 // Set once the dashboard has asked this server to decommission, so we stop the
 // loops and only self-uninstall once.
@@ -167,11 +177,43 @@ function run() {
     log,
   });
 
+  // 4. Auto-update. Tidy up after any upgrade we may have just applied, then
+  //    check for an approved newer version shortly after startup and once a day
+  //    at a quiet hour. Opt-out per server via config.update.enabled = false.
+  let updateDailyTimer = null;
+  cleanupAfterUpdate().catch(() => {});
+  const updateEnabled = !(live.update && live.update.enabled === false);
+  if (updateEnabled) {
+    const upd = live.update || {};
+    const hour = Number.isInteger(upd.hour) ? upd.hour : 3;
+    const minute = Number.isInteger(upd.minute) ? upd.minute : 0;
+
+    // Shortly after startup (so a freshly-approved version propagates without
+    // waiting for the daily slot, and servers that were off at the slot catch up
+    // when they next boot).
+    setTimeout(() => {
+      if (running && !decommissioning) checkAndMaybeUpdate(live, log);
+    }, 2 * 60_000);
+
+    // Then daily at hour:minute local.
+    setTimeout(() => {
+      if (running && !decommissioning) checkAndMaybeUpdate(live, log);
+      updateDailyTimer = setInterval(() => {
+        if (running && !decommissioning) checkAndMaybeUpdate(live, log);
+      }, 24 * 3600_000);
+    }, msUntilNextLocal(hour, minute));
+
+    log.info(`Auto-update enabled. Daily check at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} local.`);
+  } else {
+    log.info('Auto-update disabled by config (this server is pinned).');
+  }
+
   const shutdown = (signal) => {
     log.info(`Received ${signal}, shutting down.`);
     running = false;
     clearInterval(telemetryTimer);
     clearInterval(checkTimer);
+    if (updateDailyTimer) clearInterval(updateDailyTimer);
     if (settingsServer) settingsServer.close();
     process.exit(0);
   };

@@ -124,6 +124,15 @@ const PAGE = `<!doctype html>
     <div id="checkToggles" style="margin-top:6px"></div>
   </div>
 
+  <div class="card">
+    <h2>Maintenance</h2>
+    <label style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer">
+      <input id="updateEnabled" type="checkbox" style="width:auto;margin:0" />
+      <span>Automatic updates</span>
+    </label>
+    <p class="muted" style="margin-top:8px">When ticked, this server checks the dashboard daily for an admin-approved newer agent version, verifies it, and installs it automatically. Untick to pin this server to its current version.</p>
+  </div>
+
   <div class="btns">
     <button class="primary" onclick="save()">Save settings</button>
     <button class="ghost" onclick="act('test-connection','Testing...')">Test connection</button>
@@ -306,6 +315,8 @@ async function load() {
   document.getElementById('schedHour').value = sch.hour ?? 7;
   document.getElementById('schedMin').value = sch.minute ?? 0;
   renderToggles(checks);
+  const upd = current.update || {};
+  document.getElementById('updateEnabled').checked = upd.enabled !== false;
   document.getElementById('hostline').textContent = 'Local configuration for ' + (current._hostname || 'this server');
   updateWatchSummary();
 }
@@ -358,6 +369,11 @@ function buildConfig() {
     }
     checks[chk.key] = c;
   }
+
+  // Auto-update toggle (preserve any hour/minute already in the config).
+  const upd = cfg.update && typeof cfg.update === 'object' ? cfg.update : {};
+  upd.enabled = document.getElementById('updateEnabled').checked;
+  cfg.update = upd;
   return cfg;
 }
 
