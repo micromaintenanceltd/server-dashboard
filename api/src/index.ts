@@ -10,7 +10,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
-import type { Env, ReportPayload, ServerRow, ServerStatus, CheckRunPayload } from './types';
+import type { Env, ReportPayload, ServerRow, ServerStatus, CheckRunPayload, SpeedtestPayload } from './types';
 import { generateApiKey, hashApiKey, keyPrefix } from './crypto';
 import { hashPassword, verifyPassword, signJwt, verifyJwt, timingSafeEqual } from './auth/crypto';
 import { generateTotpSecret, otpauthUri, verifyTotp } from './auth/totp';
@@ -91,6 +91,12 @@ async function ensureSchema(db: D1Database): Promise<void> {
         `CREATE TABLE IF NOT EXISTS agent_release (id INTEGER PRIMARY KEY, version TEXT, download_url TEXT, sha256 TEXT, enabled INTEGER NOT NULL DEFAULT 0, notes TEXT, updated_at TEXT)`
       )
       .run();
+    // Daily internet speed-test results (one row per test, per server).
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS speedtests (id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL, down_mbps REAL, up_mbps REAL, ping_ms REAL, server TEXT, tested_at TEXT NOT NULL)`
+      )
+      .run();
     // Columns added after the alert tables first shipped (Freshdesk channel +
     // the ticket-ref on alert_state). Table/column names are fixed literals.
     const addColumns: [string, string][] = [
@@ -133,6 +139,10 @@ app.use(
 app.use(
   '/api/checks',
   bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: 'Payload too large.' }, 413) })
+);
+app.use(
+  '/api/speedtest',
+  bodyLimit({ maxSize: 8 * 1024, onError: (c) => c.json({ error: 'Payload too large.' }, 413) })
 );
 
 // --- Helpers --------------------------------------------------------------
@@ -1096,6 +1106,51 @@ app.post('/api/checks', async (c) => {
   return c.json({ ok: true, overall_status: overall, pass, warn, fail, run_at: runAt });
 });
 
+// --- POST /api/speedtest : agent records a daily internet speed test -------
+app.post('/api/speedtest', async (c) => {
+  const auth = c.req.header('Authorization') || '';
+  const rawKey = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!rawKey) return c.json({ error: 'Missing Bearer API key.' }, 401);
+  const hash = await hashApiKey(rawKey);
+  const server = await c.env.DB.prepare('SELECT id FROM servers WHERE api_key_hash = ?1')
+    .bind(hash)
+    .first<{ id: string }>();
+  if (!server) return c.json({ error: 'Invalid API key.' }, 401);
+
+  let payload: SpeedtestPayload;
+  try {
+    payload = (await c.req.json()) as SpeedtestPayload;
+  } catch {
+    return c.json({ error: 'Body must be valid JSON.' }, 400);
+  }
+
+  const testedAt = payload.tested_at && !isNaN(Date.parse(payload.tested_at))
+    ? new Date(payload.tested_at).toISOString()
+    : new Date().toISOString();
+
+  await c.env.DB.prepare(
+    `INSERT INTO speedtests (server_id, down_mbps, up_mbps, ping_ms, server, tested_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+  )
+    .bind(
+      server.id,
+      numOrNull(payload.down_mbps),
+      numOrNull(payload.up_mbps),
+      numOrNull(payload.ping_ms),
+      typeof payload.server === 'string' ? payload.server.slice(0, 80) : null,
+      testedAt
+    )
+    .run();
+
+  // Keep the table small: drop this server's rows older than 60 days.
+  const cutoff = new Date(Date.now() - 60 * 24 * 3600_000).toISOString();
+  await c.env.DB.prepare('DELETE FROM speedtests WHERE server_id = ?1 AND tested_at < ?2')
+    .bind(server.id, cutoff)
+    .run();
+
+  return c.json({ ok: true, tested_at: testedAt });
+});
+
 // --- GET /api/servers : list all servers with latest status ---------------
 app.get('/api/servers', async (c) => {
   const guard = await requireUser(c);
@@ -1214,6 +1269,16 @@ app.get('/api/servers/:id', async (c) => {
     .bind(id)
     .all();
 
+  // Internet speed tests over the last 7 days (newest first).
+  const speedCutoff = new Date(now - 7 * 24 * 3600_000).toISOString();
+  const { results: speedtests } = await c.env.DB.prepare(
+    `SELECT down_mbps, up_mbps, ping_ms, server, tested_at
+     FROM speedtests WHERE server_id = ?1 AND tested_at >= ?2
+     ORDER BY tested_at DESC`
+  )
+    .bind(id, speedCutoff)
+    .all();
+
   return c.json({
     server: {
       id: server.id,
@@ -1243,6 +1308,13 @@ app.get('/api/servers/:id', async (c) => {
       warn_count: r.warn_count,
       fail_count: r.fail_count,
       run_at: r.run_at,
+    })),
+    speedtests: (speedtests as any[]).map((r) => ({
+      down_mbps: r.down_mbps,
+      up_mbps: r.up_mbps,
+      ping_ms: r.ping_ms,
+      server: r.server,
+      tested_at: r.tested_at,
     })),
     latest_report: latest
       ? {

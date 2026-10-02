@@ -138,3 +138,12 @@ export interface CheckRunPayload {
   run_at?: string; // agent-side time; the API stamps its own too
   agent_version?: string;
 }
+
+// The payload an agent POSTs to /api/speedtest once a day.
+export interface SpeedtestPayload {
+  down_mbps?: number | null;
+  up_mbps?: number | null;
+  ping_ms?: number | null;
+  server?: string;
+  tested_at?: string;
+}

@@ -7,7 +7,8 @@
 // cycle is logged and retried.
 
 const { loadConfig, writeConfig } = require('../config');
-const { collectReport, postReport, postCheckRun } = require('../report');
+const { collectReport, postReport, postCheckRun, postSpeedtest } = require('../report');
+const { runSpeedTest } = require('../collectors/speedtest');
 const { runAllChecks } = require('../checks');
 const { isCheckDue } = require('../lib/schedule');
 const { readState, writeState } = require('../lib/state');
@@ -95,6 +96,41 @@ function scheduleLine(cfg) {
   return `${s.dayOfWeek} ${String(s.hour).padStart(2, '0')}:${String(s.minute || 0).padStart(2, '0')} UK`;
 }
 
+// Daily internet speed test. Catch-up style: once per day, at or after the
+// configured local hour. Records the day in state so it runs only once.
+let speedtestRunning = false;
+
+async function maybeRunSpeedtest(cfg) {
+  const st = (cfg && cfg.speedtest) || {};
+  if (st.enabled === false || speedtestRunning) return;
+  const hour = Number.isInteger(st.hour) ? st.hour : 2;
+  const now = new Date();
+  if (now.getHours() < hour) return; // slot hasn't arrived yet today
+  const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  const state = readState();
+  if (state.lastSpeedtestDay === today) return; // already done today
+
+  speedtestRunning = true;
+  log.info('Running daily internet speed test...');
+  try {
+    const result = await runSpeedTest();
+    if (result) {
+      await postSpeedtest(cfg, result);
+      state.lastSpeedtestDay = today;
+      writeState(state);
+      log.info(
+        `Speed test: down=${result.down_mbps}Mbps up=${result.up_mbps}Mbps ping=${result.ping_ms}ms`
+      );
+    } else {
+      log.warn('Speed test produced no result (endpoint blocked?). Will retry next slot.');
+    }
+  } catch (err) {
+    log.error('Speed test failed:', err.message);
+  } finally {
+    speedtestRunning = false;
+  }
+}
+
 function run() {
   let live;
   try {
@@ -120,10 +156,14 @@ function run() {
     if (running && !decommissioning) runOnceCycle(live);
   }, currentInterval * 60_000);
 
-  // 2. Weekly check scheduler loop.
+  // 2. Weekly check scheduler loop (+ daily speed test, same cadence).
   setTimeout(() => maybeRunChecks(live), 15_000);
+  setTimeout(() => maybeRunSpeedtest(live), 45_000);
   const checkTimer = setInterval(() => {
-    if (running && !decommissioning) maybeRunChecks(live);
+    if (running && !decommissioning) {
+      maybeRunChecks(live);
+      maybeRunSpeedtest(live);
+    }
   }, CHECK_POLL_MS);
 
   // Apply a new config from the settings page: validate, persist, swap into the

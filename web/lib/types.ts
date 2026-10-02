@@ -97,6 +97,14 @@ export interface ServersResponse {
   stale_after_minutes: number;
 }
 
+export interface SpeedtestResult {
+  down_mbps: number | null;
+  up_mbps: number | null;
+  ping_ms: number | null;
+  server?: string | null;
+  tested_at: string;
+}
+
 export interface HistoryPoint {
   cpu_percent: number | null;
   ram_used_mb: number | null;
@@ -141,5 +149,6 @@ export interface ServerDetail {
   } | null;
   check_history: CheckSummary[];
   history: HistoryPoint[];
+  speedtests: SpeedtestResult[];
   stale_after_minutes: number;
 }

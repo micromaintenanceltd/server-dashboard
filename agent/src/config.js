@@ -86,6 +86,11 @@ function loadConfig() {
   cfg.update.hour = Number.isInteger(cfg.update.hour) ? cfg.update.hour : 3;
   cfg.update.minute = Number.isInteger(cfg.update.minute) ? cfg.update.minute : 0;
 
+  // Daily internet speed test (once per day at the given local hour).
+  cfg.speedtest = cfg.speedtest && typeof cfg.speedtest === 'object' ? cfg.speedtest : {};
+  cfg.speedtest.enabled = cfg.speedtest.enabled !== false;
+  cfg.speedtest.hour = Number.isInteger(cfg.speedtest.hour) ? cfg.speedtest.hour : 2;
+
   cfg._configPath = configPath;
 
   return cfg;

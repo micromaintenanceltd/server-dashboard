@@ -51,6 +51,11 @@ async function postCheckRun(cfg, results) {
   });
 }
 
+// POST a daily internet speed-test result to the API.
+async function postSpeedtest(cfg, result) {
+  return postJson(cfg, '/api/speedtest', result);
+}
+
 // Deregister this server from the dashboard (removes its own record). Called by
 // the uninstaller. Best-effort: never throws, so it cannot block an uninstall.
 async function deregister(cfg) {
@@ -116,6 +121,7 @@ module.exports = {
   collectReport,
   postReport,
   postCheckRun,
+  postSpeedtest,
   deregister,
   verifySettingsPassword,
   AGENT_VERSION,

@@ -24,6 +24,9 @@ module.exports = {
   // Turn off ("Automatic updates" tickbox) to pin a server to its current build.
   update: { enabled: true, hour: 3, minute: 0 },
 
+  // Daily internet speed test (download/upload/ping), once per day.
+  speedtest: { enabled: true, hour: 2 },
+
   // Weekly check run configuration. Runs once a week at the scheduled UK time.
   // Each check is ticked on/off per server in the local settings page
   // ("enabled"). The client-specific checks default to OFF so each server is

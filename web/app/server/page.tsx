@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { LineChart, type ChartPoint } from '@/components/LineChart';
 import { UsageBar } from '@/components/UsageBar';
 import { UptimeCalendar } from '@/components/UptimeCalendar';
+import { SpeedCard } from '@/components/SpeedCard';
 import { formatUkDateTime, relativeAge, formatUptime, formatMb, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
@@ -73,6 +74,7 @@ function ServerDetailInner() {
   if (!data) return null;
 
   const { server, latest_report, history, latest_check, check_history } = data;
+  const speedtests = data.speedtests ?? [];
 
   // Build chart series from history.
   const cpuSeries: ChartPoint[] = history.map((h) => ({ t: h.reported_at, v: h.cpu_percent }));
@@ -158,10 +160,16 @@ function ServerDetailInner() {
         </MetricCard>
       </section>
 
-      {/* Uptime history (30-day calendar derived from report gaps) */}
-      <section className="card mb-6 overflow-visible p-5">
-        <h2 className="mb-3 text-sm font-semibold text-slate-800">Uptime history</h2>
-        <UptimeCalendar serverId={server.id} />
+      {/* Uptime history (30-day calendar) + internet speed */}
+      <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="card overflow-visible p-5 lg:col-span-2">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">Uptime history</h2>
+          <UptimeCalendar serverId={server.id} />
+        </div>
+        <div className="card p-5">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">Internet speed</h2>
+          <SpeedCard tests={speedtests} />
+        </div>
       </section>
 
       {/* Trend charts */}
