@@ -31,6 +31,7 @@ const { readState, writeState } = require('./lib/state');
 
 const AGENT_VERSION = require('../package.json').version;
 const UPDATE_TASK = 'MMLServerAgentUpdate';
+const SERVICE_NAME = 'MMLServerAgent';
 const MAX_ATTEMPTS_PER_VERSION = 3; // give up on a version after this many fails
 
 // Compare dotted numeric versions. Returns 1 if a>b, -1 if a<b, 0 if equal.
@@ -104,8 +105,25 @@ async function launchInstaller(installerPath, log) {
   const tmp = os.tmpdir();
   const logPath = path.join(tmp, 'mml-agent-update-install.log');
   const cmdPath = path.join(tmp, 'mml-agent-update-run.cmd');
+  // Stop the service and wait until it is actually STOPPED (up to ~30s) before
+  // launching the installer, so the agent's files are not in use when Setup
+  // replaces them. The installer also stops the service itself, so this is
+  // belt-and-braces, but doing it here means the binaries are already free by
+  // the time Setup runs - avoiding the "could not close application" abort.
   const cmd =
     '@echo off\r\n' +
+    `net stop ${SERVICE_NAME} >nul 2>&1\r\n` +
+    'setlocal enabledelayedexpansion\r\n' +
+    'set /a n=0\r\n' +
+    ':wait\r\n' +
+    `sc query ${SERVICE_NAME} | find "STOPPED" >nul\r\n` +
+    'if not errorlevel 1 goto go\r\n' +
+    'set /a n+=1\r\n' +
+    'if !n! geq 15 goto go\r\n' +
+    'timeout /t 2 /nobreak >nul\r\n' +
+    'goto wait\r\n' +
+    ':go\r\n' +
+    'timeout /t 3 /nobreak >nul\r\n' +
     `"${installerPath}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL /LOG="${logPath}"\r\n`;
   fs.writeFileSync(cmdPath, cmd);
 

@@ -27,7 +27,7 @@
   #error You must pass /DApiUrl=<worker url> to iscc (see build.ps1).
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.9"
+  #define AppVersion "0.4.1"
 #endif
 
 #define AppName "MML Server Agent"
@@ -52,6 +52,15 @@ OutputBaseFilename=mml-agent-setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Do NOT use RestartManager to close applications holding our files. The agent
+; runs as a service; we stop it ourselves in CurStepChanged (below) before any
+; file is copied. With the default (yes), a silent install tries to "close" the
+; running agent via RestartManager, can't, and - because message boxes are
+; suppressed - auto-aborts and rolls back. Turning this off lets the install
+; proceed once we've stopped the service, which is what makes a hands-free
+; self-update work. See installer\README.md.
+CloseApplications=no
+RestartApplications=no
 ; Applied to the produced installer by the signing step (see build.ps1).
 ; SignTool=azuretrustedsigning $f
 
@@ -162,9 +171,14 @@ var
 begin
   if CurStep = ssInstall then
   begin
+    { Stop the service and wait for it to terminate (net.exe returns once the
+      SCM reports STOPPED). A second call is harmless if already stopped. Then
+      pause to let file handles - including an AV scanner's - be released before
+      Setup replaces the binaries. With CloseApplications=no, Setup will not try
+      to close the agent itself, so this is the only thing freeing the files. }
     Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceId}', '', SW_HIDE,
       ewWaitUntilTerminated, ResultCode);
-    Sleep(1500);
+    Sleep(5000);
   end;
 end;
 
