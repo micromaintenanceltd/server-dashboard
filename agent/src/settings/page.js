@@ -45,6 +45,23 @@ const PAGE = `<!doctype html>
   .reveal { display: flex; gap: 8px; align-items: center; }
   .reveal button { padding: 6px 10px; font-weight: 500; }
   code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+  /* Modal overlay + box */
+  .modal { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(15,23,42,.45);
+    align-items: center; justify-content: center; padding: 20px; }
+  .modal.show { display: flex; }
+  .modal-box { background: #fff; border-radius: 10px; width: 100%; max-width: 560px; max-height: 85vh;
+    display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .modal-box h3 { margin: 0; padding: 16px 18px; border-bottom: 1px solid #e2e8f0; font-size: 15px; }
+  .modal-body { padding: 14px 18px; overflow: auto; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid #e2e8f0; }
+  .svc-search { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 10px; }
+  .svc-row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px;
+    padding: 5px 2px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+  .svc-row .sname { color: #64748b; font-size: 11px; }
+  .svc-row .crit { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #475569; white-space: nowrap; }
+  .svc-row input { width: auto; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:6px; }
+  .dot.on { background:#16a34a; } .dot.off { background:#dc2626; }
 </style>
 </head>
 <body>
@@ -66,12 +83,7 @@ const PAGE = `<!doctype html>
       <button class="ghost" type="button" onclick="toggleKey()">Show</button>
     </div>
     <p class="muted" id="apiKeyHint">This key authenticates this server to the dashboard. For security it is never shown here. Leave blank to keep the current key; type a new key only to rotate it.</p>
-    <label>Settings password (required to save changes)</label>
-    <div class="reveal">
-      <input id="settingsPassword" type="password" autocomplete="off" placeholder="MML settings password" />
-      <button class="ghost" type="button" onclick="toggleTok()">Show</button>
-    </div>
-    <p class="muted">Saving settings and the Send/Run buttons require the shared MML settings password (ask your admin). The agent checks it with the dashboard &mdash; it is never stored on this machine. Remembered for this browser session.</p>
+    <p class="muted">Saving changes asks for the shared MML settings password (verified with the dashboard, never stored here).</p>
   </div>
 
   <div class="card">
@@ -84,8 +96,15 @@ const PAGE = `<!doctype html>
     <input id="avProduct" type="text" />
     <label>AV service names (comma separated)</label>
     <input id="avServiceNames" type="text" />
-    <label>Watched services (JSON array of {name, displayName, critical})</label>
-    <textarea id="watchServices"></textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
+      <label style="margin:0">Watched services</label>
+      <button class="ghost" type="button" style="padding:6px 12px;font-weight:500" onclick="openServices()">Choose services…</button>
+    </div>
+    <p class="muted" id="watchSummary">No services watched.</p>
+    <details style="margin-top:6px">
+      <summary class="muted" style="cursor:pointer">Advanced: edit as JSON</summary>
+      <textarea id="watchServices" style="margin-top:6px"></textarea>
+    </details>
   </div>
 
   <div class="card">
@@ -108,21 +127,84 @@ const PAGE = `<!doctype html>
   <div class="btns">
     <button class="primary" onclick="save()">Save settings</button>
     <button class="ghost" onclick="act('test-connection','Testing...')">Test connection</button>
-    <button class="ghost" onclick="act('send-report','Sending report...')">Send report now</button>
-    <button class="ghost" onclick="act('run-check','Running checks...')">Run checks now</button>
+    <button class="ghost" onclick="act('send-report','Sending report...', true)">Send report now</button>
+    <button class="ghost" onclick="act('run-check','Running checks...', true)">Run checks now</button>
   </div>
   <p class="muted">Changes apply within a minute. The interval change restarts the reporting timer automatically.</p>
 </main>
+
+<!-- Settings password prompt -->
+<div class="modal" id="pwModal">
+  <div class="modal-box" style="max-width:400px">
+    <h3>Settings password</h3>
+    <div class="modal-body">
+      <p class="muted" style="margin-top:0">Enter the shared MML settings password to save changes.</p>
+      <input id="pwInput" type="password" autocomplete="off" placeholder="Password"
+             onkeydown="if(event.key==='Enter')pwSubmit();if(event.key==='Escape')pwCancel();" />
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" onclick="pwCancel()">Cancel</button>
+      <button class="primary" onclick="pwSubmit()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Service picker -->
+<div class="modal" id="svcModal">
+  <div class="modal-box">
+    <h3>Choose watched services</h3>
+    <div class="modal-body">
+      <input class="svc-search" id="svcSearch" placeholder="Search services..." oninput="renderSvc()" />
+      <p class="muted" style="margin:0 0 8px">Tick a service to watch it; tick <strong>Critical</strong> to alert when it stops.</p>
+      <div id="svcList">Loading services...</div>
+    </div>
+    <div class="modal-foot">
+      <span class="muted" id="svcCount" style="margin-right:auto"></span>
+      <button class="ghost" onclick="closeServices()">Cancel</button>
+      <button class="primary" onclick="applyServices()">Apply</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 const H = { 'Content-Type': 'application/json', 'X-Requested-With': 'mml-settings' };
 let current = {};
 
-// Headers for mutating calls: include the settings password the user entered.
-function authHeaders() {
-  const pw = (document.getElementById('settingsPassword').value || '').trim();
-  return pw ? Object.assign({}, H, { 'X-Settings-Password': pw }) : H;
+// --- Settings password prompt (modal) ---
+// Resolves to the password (from this session's cache, or by prompting). The
+// password is cached in sessionStorage so we only ask once per browser session;
+// a 403 on save clears it so the next attempt re-prompts.
+let pwResolver = null;
+function getSettingsPassword() {
+  try {
+    const cached = sessionStorage.getItem('mml_settings_password');
+    if (cached) return Promise.resolve(cached);
+  } catch {}
+  const m = document.getElementById('pwModal');
+  const inp = document.getElementById('pwInput');
+  inp.value = '';
+  m.classList.add('show');
+  setTimeout(() => inp.focus(), 50);
+  return new Promise((resolve, reject) => { pwResolver = { resolve, reject }; });
+}
+function pwSubmit() {
+  const v = (document.getElementById('pwInput').value || '').trim();
+  if (!v) return;
+  try { sessionStorage.setItem('mml_settings_password', v); } catch {}
+  document.getElementById('pwModal').classList.remove('show');
+  if (pwResolver) { pwResolver.resolve(v); pwResolver = null; }
+}
+function pwCancel() {
+  document.getElementById('pwModal').classList.remove('show');
+  if (pwResolver) { pwResolver.reject(new Error('cancelled')); pwResolver = null; }
+}
+function pwHeaders(pw) {
+  return Object.assign({}, H, { 'X-Settings-Password': pw });
+}
+function forgetPassword() {
+  try { sessionStorage.removeItem('mml_settings_password'); } catch {}
 }
 
 function toast(msg, ok) {
@@ -134,16 +216,11 @@ function toggleKey() {
   const el = document.getElementById('apiKey');
   el.type = el.type === 'password' ? 'text' : 'password';
 }
-function toggleTok() {
-  const el = document.getElementById('settingsPassword');
-  el.type = el.type === 'password' ? 'text' : 'password';
-}
-
 // MML's six weekly checks, in display order. Each has a tickbox plus any
 // per-check fields. Field types: 'number', 'text', 'list' (one entry per line).
 const CHECKS = [
   { key: 'windowsServerBackup', label: 'Windows Server Backup',
-    desc: 'Always applies. Warns if the last successful backup is older than the age below.',
+    desc: 'Optional — enable on servers that use Windows Server Backup. Warns if the last successful backup is older than the age below.',
     fields: [{ key: 'maxAgeHours', label: 'Max age (hours)', type: 'number' }] },
   { key: 'sage', label: 'Sage 50 (file backup)',
     desc: 'Enable on servers running Sage 50 Accounts. Backup folders are auto-discovered; warns if Sage is not detected.',
@@ -230,11 +307,18 @@ async function load() {
   document.getElementById('schedMin').value = sch.minute ?? 0;
   renderToggles(checks);
   document.getElementById('hostline').textContent = 'Local configuration for ' + (current._hostname || 'this server');
-  // Restore the settings password for this browser session (not from the server).
-  try {
-    const pwEl = document.getElementById('settingsPassword');
-    if (!pwEl.value) pwEl.value = sessionStorage.getItem('mml_settings_password') || '';
-  } catch {}
+  updateWatchSummary();
+}
+
+// Summarise the watched-services list under the "Choose services" button.
+function updateWatchSummary() {
+  let list = [];
+  try { list = JSON.parse(document.getElementById('watchServices').value || '[]'); } catch {}
+  const el = document.getElementById('watchSummary');
+  if (!list.length) { el.textContent = 'No services watched.'; return; }
+  const crit = list.filter((s) => s.critical).length;
+  el.textContent = list.length + ' watched (' + crit + ' critical): ' +
+    list.map((s) => (s.displayName || s.name) + (s.critical ? '*' : '')).join(', ');
 }
 
 function buildConfig() {
@@ -283,32 +367,122 @@ async function save() {
   catch (e) { return toast('Invalid JSON in one of the list fields: ' + e.message, false); }
   if (!cfg.apiUrl) return toast('API URL is required.', false);
   if (!current.apiKeySet && !cfg.apiKey) return toast('API key is required (no key is stored yet).', false);
-  const r = await fetch('/api/config', { method: 'POST', headers: authHeaders(), body: JSON.stringify(cfg) });
+  let pw;
+  try { pw = await getSettingsPassword(); } catch { return; } // cancelled
+  const r = await fetch('/api/config', { method: 'POST', headers: pwHeaders(pw), body: JSON.stringify(cfg) });
   const body = await r.json().catch(() => ({}));
   if (r.ok) {
-    rememberToken();
     toast('Settings saved.', true);
-    // Reload from the server so the key stays masked and apiKeySet is accurate
-    // (a rotation may have just set one). Clears the typed key from the field.
     await load();
+  } else if (r.status === 403) {
+    forgetPassword();
+    toast('Settings password incorrect — try saving again.', false);
   } else {
     toast('Save failed: ' + (body.error || r.status), false);
   }
 }
 
-function rememberToken() {
-  try {
-    const pw = (document.getElementById('settingsPassword').value || '').trim();
-    if (pw) sessionStorage.setItem('mml_settings_password', pw);
-  } catch {}
+// needsAuth: true for endpoints gated by the settings password (send-report,
+// run-check). test-connection isn't gated, so it skips the prompt.
+async function act(path, msg, needsAuth) {
+  let headers = H;
+  if (needsAuth) {
+    let pw;
+    try { pw = await getSettingsPassword(); } catch { return; }
+    headers = pwHeaders(pw);
+  }
+  toast(msg, true);
+  const r = await fetch('/api/' + path, { method: 'POST', headers });
+  const body = await r.json().catch(() => ({}));
+  if (r.ok) toast(body.message || 'Done.', true);
+  else if (needsAuth && r.status === 403) { forgetPassword(); toast('Settings password incorrect — try again.', false); }
+  else toast('Failed: ' + (body.error || r.status), false);
 }
 
-async function act(path, msg) {
-  toast(msg, true);
-  const r = await fetch('/api/' + path, { method: 'POST', headers: authHeaders() });
-  const body = await r.json().catch(() => ({}));
-  if (r.ok) { rememberToken(); toast(body.message || 'Done.', true); }
-  else toast('Failed: ' + (body.error || r.status), false);
+// --- Service picker modal ---
+let allServices = [];
+function openServices() {
+  const m = document.getElementById('svcModal');
+  svcSel = {}; // reload selection from the current watch list
+  m.classList.add('show');
+  document.getElementById('svcSearch').value = '';
+  document.getElementById('svcList').textContent = 'Loading services...';
+  fetch('/api/services', { headers: H })
+    .then((r) => r.json())
+    .then((d) => { allServices = d.services || []; renderSvc(); })
+    .catch((e) => { document.getElementById('svcList').textContent = 'Could not load services: ' + e.message; });
+}
+function closeServices() {
+  document.getElementById('svcModal').classList.remove('show');
+}
+function currentWatchMap() {
+  let list = [];
+  try { list = JSON.parse(document.getElementById('watchServices').value || '[]'); } catch {}
+  const map = {};
+  for (const s of list) if (s && s.name) map[s.name.toLowerCase()] = { watch: true, critical: !!s.critical };
+  return map;
+}
+// Live selection state keyed by lowercased service name.
+let svcSel = {};
+function renderSvc() {
+  if (Object.keys(svcSel).length === 0) svcSel = currentWatchMap();
+  const q = (document.getElementById('svcSearch').value || '').toLowerCase();
+  const rows = allServices.filter((s) =>
+    !q || s.name.toLowerCase().includes(q) || s.displayName.toLowerCase().includes(q)
+  );
+  const wrap = document.getElementById('svcList');
+  wrap.innerHTML = '';
+  for (const s of rows) {
+    const key = s.name.toLowerCase();
+    const sel = svcSel[key] || { watch: false, critical: false };
+    const row = document.createElement('div');
+    row.className = 'svc-row';
+    row.innerHTML =
+      '<input type="checkbox" ' + (sel.watch ? 'checked' : '') + ' data-w="' + esc(key) + '" />' +
+      '<div><div>' + esc(s.displayName) + '<span class="dot ' + (s.running ? 'on' : 'off') + '"></span></div>' +
+      '<div class="sname">' + esc(s.name) + '</div></div>' +
+      '<label class="crit"><input type="checkbox" ' + (sel.critical ? 'checked' : '') + ' data-c="' + esc(key) + '" />Critical</label>';
+    wrap.appendChild(row);
+  }
+  // Wire change handlers.
+  wrap.querySelectorAll('input[data-w]').forEach((el) => {
+    el.addEventListener('change', (e) => {
+      const k = e.target.getAttribute('data-w');
+      svcSel[k] = svcSel[k] || { watch: false, critical: false };
+      svcSel[k].watch = e.target.checked;
+    });
+  });
+  wrap.querySelectorAll('input[data-c]').forEach((el) => {
+    el.addEventListener('change', (e) => {
+      const k = e.target.getAttribute('data-c');
+      svcSel[k] = svcSel[k] || { watch: false, critical: false };
+      svcSel[k].critical = e.target.checked;
+      if (e.target.checked) svcSel[k].watch = true; // critical implies watched
+      renderSvc();
+    });
+  });
+  const picked = Object.values(svcSel).filter((v) => v.watch).length;
+  document.getElementById('svcCount').textContent = picked + ' selected';
+}
+function applyServices() {
+  const byName = {};
+  for (const s of allServices) byName[s.name.toLowerCase()] = s;
+  const list = [];
+  for (const [key, v] of Object.entries(svcSel)) {
+    if (!v.watch) continue;
+    const svc = byName[key];
+    list.push({
+      name: svc ? svc.name : key,
+      displayName: svc ? svc.displayName : key,
+      critical: !!v.critical,
+    });
+  }
+  list.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  document.getElementById('watchServices').value = JSON.stringify(list, null, 2);
+  svcSel = {};
+  updateWatchSummary();
+  closeServices();
+  toast('Watched services updated — remember to Save settings.', true);
 }
 
 load().catch(e => toast('Could not load config: ' + e.message, false));

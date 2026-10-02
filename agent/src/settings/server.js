@@ -16,6 +16,7 @@ const os = require('os');
 
 const { collectReport, postReport, postCheckRun, verifySettingsPassword } = require('../report');
 const { runAllChecks } = require('../checks');
+const { runPsJson, toArray } = require('../lib/powershell');
 
 // Start the server. deps:
 //   getConfig()       -> the live config object
@@ -87,6 +88,24 @@ async function handle(req, res, ctx) {
 
   if (req.method === 'GET' && path === '/api/config') {
     return json(res, 200, publicConfig(ctx.getConfig()));
+  }
+
+  // All Windows services on this machine, for the "choose services" picker.
+  // Read-only, no password needed.
+  if (req.method === 'GET' && path === '/api/services') {
+    const raw = await runPsJson(
+      "Get-Service -ErrorAction SilentlyContinue | Select-Object Name, DisplayName, Status | ConvertTo-Json -Compress",
+      { fallback: [], timeoutMs: 20000 }
+    );
+    const services = toArray(raw)
+      .filter((s) => s && s.Name)
+      .map((s) => ({
+        name: s.Name,
+        displayName: s.DisplayName || s.Name,
+        running: s.Status === 4 || s.Status === 'Running',
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return json(res, 200, { services });
   }
 
   if (req.method === 'POST' && path === '/api/config') {
