@@ -63,7 +63,16 @@ export interface ReportPayload {
   services: ServiceInfo;
   av: AvStatus;
   patch: PatchStatus;
+  pings?: PingResult[];
   meta: ReportMeta;
+}
+
+// One LAN ping-monitor result.
+export interface PingResult {
+  name: string;
+  host: string;
+  ok: boolean;
+  rtt_ms?: number | null;
 }
 
 export interface DiskVolume {

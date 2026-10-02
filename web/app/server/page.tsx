@@ -192,6 +192,31 @@ function ServerDetailInner() {
         </Panel>
       </section>
 
+      {/* LAN ping monitors */}
+      {Array.isArray(latest_report?.pings) && latest_report!.pings!.length > 0 && (
+        <section className="card mb-6 p-5">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">Network monitors (LAN)</h2>
+          <ul className="divide-y divide-slate-100">
+            {latest_report!.pings!.map((p) => (
+              <li key={p.host} className="flex items-center gap-3 py-2">
+                <span
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${p.ok ? 'bg-status-online' : 'bg-status-offline'}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-slate-800">{p.name}</div>
+                  <div className="truncate font-mono text-xs text-slate-500">{p.host}</div>
+                </div>
+                <span
+                  className={`whitespace-nowrap text-sm font-medium ${p.ok ? 'text-status-online' : 'text-status-offline'}`}
+                >
+                  {p.ok ? (p.rtt_ms != null ? `${p.rtt_ms} ms` : 'Responding') : 'No response'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* Services + AV + Patch */}
       <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel title="Watched services">

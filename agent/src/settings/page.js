@@ -133,6 +133,13 @@ const PAGE = `<!doctype html>
     <p class="muted" style="margin-top:8px">When ticked, this server checks the dashboard daily for an admin-approved newer agent version, verifies it, and installs it automatically. Untick to pin this server to its current version.</p>
   </div>
 
+  <div class="card">
+    <h2>Network monitors (LAN ping)</h2>
+    <p class="muted" style="margin-top:0">Ping other devices on this network (by IP or hostname). You&apos;ll get a dashboard alert if one stops responding. Add as many as you need &mdash; the name is used in the alert.</p>
+    <div id="pingList" style="margin-top:10px"></div>
+    <button class="ghost" type="button" style="margin-top:8px;padding:6px 12px;font-weight:500" onclick="addPing()">+ Add device</button>
+  </div>
+
   <div class="btns">
     <button class="primary" onclick="save()">Save settings</button>
     <button class="ghost" onclick="act('test-connection','Testing...')">Test connection</button>
@@ -315,6 +322,7 @@ async function load() {
   document.getElementById('schedHour').value = sch.hour ?? 7;
   document.getElementById('schedMin').value = sch.minute ?? 0;
   renderToggles(checks);
+  renderPings(current.pingTargets || []);
   const upd = current.update || {};
   document.getElementById('updateEnabled').checked = upd.enabled !== false;
   document.getElementById('hostline').textContent = 'Local configuration for ' + (current._hostname || 'this server');
@@ -374,7 +382,56 @@ function buildConfig() {
   const upd = cfg.update && typeof cfg.update === 'object' ? cfg.update : {};
   upd.enabled = document.getElementById('updateEnabled').checked;
   cfg.update = upd;
+
+  // LAN ping monitors.
+  const pings = [];
+  document.querySelectorAll('#pingList .ping-row').forEach(function (row) {
+    const name = row.querySelector('.ping-name').value.trim();
+    const host = row.querySelector('.ping-host').value.trim();
+    if (host) pings.push({ name: name || host, host: host });
+  });
+  cfg.pingTargets = pings;
   return cfg;
+}
+
+// Build one editable ping-target row (name + host + remove).
+function makePingRow(name, host) {
+  const row = document.createElement('div');
+  row.className = 'ping-row';
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:6px';
+  const n = document.createElement('input');
+  n.className = 'ping-name';
+  n.placeholder = 'Name (e.g. NAS, Switch)';
+  n.value = name || '';
+  n.style.flex = '1';
+  const h = document.createElement('input');
+  h.className = 'ping-host';
+  h.placeholder = 'IP or hostname';
+  h.value = host || '';
+  h.style.flex = '1';
+  const b = document.createElement('button');
+  b.className = 'ghost';
+  b.type = 'button';
+  b.textContent = '✕';
+  b.title = 'Remove';
+  b.style.cssText = 'padding:6px 10px';
+  b.onclick = function () {
+    row.remove();
+  };
+  row.appendChild(n);
+  row.appendChild(h);
+  row.appendChild(b);
+  return row;
+}
+function renderPings(list) {
+  const el = document.getElementById('pingList');
+  el.innerHTML = '';
+  (list || []).forEach(function (t) {
+    el.appendChild(makePingRow(t.name, t.host));
+  });
+}
+function addPing() {
+  document.getElementById('pingList').appendChild(makePingRow('', ''));
 }
 
 async function save() {

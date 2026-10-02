@@ -449,6 +449,7 @@ function ServerCard({ server }: { server: ServerListItem }) {
     latest && latest.ram_total_mb ? ((latest.ram_used_mb ?? 0) / latest.ram_total_mb) * 100 : null;
   const stoppedCritical = latest?.services?.stopped_critical ?? [];
   const disks = latest?.disk ?? [];
+  const pingDown = (latest?.pings ?? []).filter((p) => p.ok === false).length;
 
   // Make an offline device impossible to miss (red), and a stale one amber.
   const statusClass =
@@ -526,6 +527,11 @@ function ServerCard({ server }: { server: ServerListItem }) {
           <span className="inline-flex shrink-0 items-center gap-1 font-medium text-status-offline">
             <WarnIcon />
             {stoppedCritical.length} critical
+          </span>
+        ) : pingDown > 0 ? (
+          <span className="inline-flex shrink-0 items-center gap-1 font-medium text-status-offline">
+            <WarnIcon />
+            {pingDown} LAN down
           </span>
         ) : server.latest_check ? (
           <span className="inline-flex shrink-0 items-center gap-1.5">

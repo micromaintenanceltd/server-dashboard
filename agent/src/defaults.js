@@ -12,6 +12,10 @@ module.exports = {
   ],
   topProcessCount: 5,
 
+  // LAN ping monitors: [{ name, host }]. Configured per server on the local
+  // settings page. The dashboard alerts when a target stops responding.
+  pingTargets: [],
+
   // Local settings web page, served on loopback only (127.0.0.1).
   settings: { enabled: true, port: 8000 },
 

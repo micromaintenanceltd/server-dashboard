@@ -230,6 +230,7 @@ export interface AlertConfigView {
   on_check_fail: boolean;
   on_offline: boolean;
   on_crit_stopped: boolean;
+  on_ping_down: boolean;
 }
 export async function fetchAlertConfig(): Promise<AlertConfigView> {
   return request('/api/alert-config');

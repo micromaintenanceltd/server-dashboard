@@ -99,12 +99,20 @@ async function ensureSchema(db: D1Database): Promise<void> {
       ['alert_config', 'freshdesk_email'],
       ['alert_config', 'freshdesk_group_id'],
       ['alert_state', 'ref'],
+      ['server_reports', 'pings_json'], // LAN ping-monitor results per report
     ];
     for (const [table, col] of addColumns) {
       const exists = await db
         .prepare(`SELECT 1 AS ok FROM pragma_table_info('${table}') WHERE name = '${col}'`)
         .first();
       if (!exists) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} TEXT`).run();
+    }
+    // Alert toggle for ping-down (integer; added after alert_config shipped).
+    const pingCol = await db
+      .prepare(`SELECT 1 AS ok FROM pragma_table_info('alert_config') WHERE name = 'on_ping_down'`)
+      .first();
+    if (!pingCol) {
+      await db.prepare(`ALTER TABLE alert_config ADD COLUMN on_ping_down INTEGER NOT NULL DEFAULT 1`).run();
     }
     schemaEnsured = true;
   } catch {
@@ -717,8 +725,8 @@ app.post('/api/report', async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO server_reports
       (server_id, cpu_percent, ram_used_mb, ram_total_mb, disk_json,
-       uptime_seconds, services_json, av_status, patch_status, meta_json, reported_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`
+       uptime_seconds, services_json, av_status, patch_status, meta_json, pings_json, reported_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)`
   )
     .bind(
       server.id,
@@ -731,6 +739,7 @@ app.post('/api/report', async (c) => {
       JSON.stringify(payload.av ?? {}),
       JSON.stringify(payload.patch ?? {}),
       JSON.stringify(payload.meta ?? {}),
+      JSON.stringify(payload.pings ?? []),
       reportedAt
     )
     .run();
@@ -804,6 +813,45 @@ app.post('/api/report', async (c) => {
               stateKey: row.kind,
               bad: false,
               detail: svc,
+            });
+          }
+        }
+
+        // LAN ping monitors: alert per target (stateKey ping:<name>) when it
+        // stops responding, and recover when it responds again (or is removed).
+        const pings = Array.isArray(payload.pings) ? payload.pings : [];
+        const downNames = new Set(
+          pings.filter((p) => p && p.ok === false).map((p) => String(p.name))
+        );
+        for (const p of pings) {
+          if (p && p.ok === false) {
+            await evaluateAlert(c.env.DB, cfg, {
+              serverId: server.id,
+              serverName: server.name,
+              clientName: server.client_name,
+              kind: 'ping',
+              stateKey: `ping:${p.name}`,
+              bad: true,
+              detail: `${p.name} (${p.host})`,
+            });
+          }
+        }
+        const activePing = await c.env.DB.prepare(
+          `SELECT kind FROM alert_state WHERE server_id = ?1 AND kind LIKE 'ping:%' AND active = 1`
+        )
+          .bind(server.id)
+          .all<{ kind: string }>();
+        for (const row of activePing.results ?? []) {
+          const name = row.kind.slice('ping:'.length);
+          if (!downNames.has(name)) {
+            await evaluateAlert(c.env.DB, cfg, {
+              serverId: server.id,
+              serverName: server.name,
+              clientName: server.client_name,
+              kind: 'ping',
+              stateKey: row.kind,
+              bad: false,
+              detail: name,
             });
           }
         }
@@ -1062,7 +1110,7 @@ app.get('/api/servers', async (c) => {
     `SELECT s.id, s.name, s.client_name, s.location, s.current_status, s.desired_state,
             s.created_at, s.last_seen_at, s.api_key_prefix,
             r.cpu_percent, r.ram_used_mb, r.ram_total_mb, r.disk_json,
-            r.uptime_seconds, r.services_json, r.meta_json, r.reported_at,
+            r.uptime_seconds, r.services_json, r.meta_json, r.pings_json, r.reported_at,
             cr.overall_status AS check_status, cr.fail_count AS check_fail,
             cr.warn_count AS check_warn, cr.pass_count AS check_pass,
             cr.run_at AS check_run_at
@@ -1094,6 +1142,7 @@ app.get('/api/servers', async (c) => {
           disk: safeParse(row.disk_json, []),
           uptime_seconds: row.uptime_seconds,
           services: safeParse(row.services_json, {}),
+          pings: safeParse(row.pings_json, []),
           reported_at: row.reported_at,
         }
       : null,
@@ -1205,6 +1254,7 @@ app.get('/api/servers/:id', async (c) => {
           services: safeParse(latest.services_json, {}),
           av: safeParse(latest.av_status, {}),
           patch: safeParse(latest.patch_status, {}),
+          pings: safeParse(latest.pings_json, []),
           meta: safeParse(latest.meta_json, {}),
           reported_at: latest.reported_at,
         }
@@ -1400,6 +1450,7 @@ app.get('/api/alert-config', async (c) => {
     on_check_fail: cfg.on_check_fail,
     on_offline: cfg.on_offline,
     on_crit_stopped: cfg.on_crit_stopped,
+    on_ping_down: cfg.on_ping_down,
   });
 });
 
@@ -1445,6 +1496,7 @@ app.post('/api/alert-config', async (c) => {
   const onCheck = body.on_check_fail === undefined ? cur.on_check_fail : !!body.on_check_fail;
   const onOffline = body.on_offline === undefined ? cur.on_offline : !!body.on_offline;
   const onCrit = body.on_crit_stopped === undefined ? cur.on_crit_stopped : !!body.on_crit_stopped;
+  const onPing = body.on_ping_down === undefined ? cur.on_ping_down : !!body.on_ping_down;
 
   if (teams && !/^https:\/\//i.test(teams)) {
     return c.json({ error: 'Teams webhook must be an https URL.' }, 400);
@@ -1455,8 +1507,8 @@ app.post('/api/alert-config', async (c) => {
 
   await c.env.DB.prepare(
     `INSERT INTO alert_config
-       (id, teams_webhook_url, email_to, email_from, email_api_key, freshdesk_domain, freshdesk_api_key, freshdesk_email, freshdesk_group_id, on_check_fail, on_offline, on_crit_stopped, updated_at)
-     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+       (id, teams_webhook_url, email_to, email_from, email_api_key, freshdesk_domain, freshdesk_api_key, freshdesk_email, freshdesk_group_id, on_check_fail, on_offline, on_crit_stopped, on_ping_down, updated_at)
+     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
      ON CONFLICT(id) DO UPDATE SET
        teams_webhook_url = excluded.teams_webhook_url,
        email_to = excluded.email_to,
@@ -1469,6 +1521,7 @@ app.post('/api/alert-config', async (c) => {
        on_check_fail = excluded.on_check_fail,
        on_offline = excluded.on_offline,
        on_crit_stopped = excluded.on_crit_stopped,
+       on_ping_down = excluded.on_ping_down,
        updated_at = excluded.updated_at`
   )
     .bind(
@@ -1483,6 +1536,7 @@ app.post('/api/alert-config', async (c) => {
       onCheck ? 1 : 0,
       onOffline ? 1 : 0,
       onCrit ? 1 : 0,
+      onPing ? 1 : 0,
       new Date().toISOString()
     )
     .run();

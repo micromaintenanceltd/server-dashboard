@@ -42,6 +42,13 @@ export interface ServicesInfo {
   top_processes?: { name: string; cpu_percent?: number; mem_mb?: number }[];
 }
 
+export interface PingResult {
+  name: string;
+  host: string;
+  ok: boolean;
+  rtt_ms?: number | null;
+}
+
 export interface LatestSummary {
   cpu_percent: number | null;
   ram_used_mb: number | null;
@@ -49,6 +56,7 @@ export interface LatestSummary {
   disk: DiskVolume[];
   uptime_seconds: number | null;
   services: ServicesInfo;
+  pings?: PingResult[];
   reported_at: string;
 }
 
@@ -118,6 +126,7 @@ export interface ServerDetail {
     services: ServicesInfo;
     av: Record<string, unknown>;
     patch: Record<string, unknown>;
+    pings?: PingResult[];
     meta: Record<string, unknown>;
     reported_at: string;
   } | null;

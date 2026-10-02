@@ -5,18 +5,20 @@ const { disks } = require('./collectors/disk');
 const { services } = require('./collectors/services');
 const { avStatus } = require('./collectors/av');
 const { patchStatus } = require('./collectors/patch');
+const { pingTargets } = require('./collectors/ping');
 
 const AGENT_VERSION = require('../package.json').version;
 
 // Gather every metric. Collectors are best-effort and resolve to safe defaults
 // on failure, so one flaky query does not stop a report going out.
 async function collectReport(cfg) {
-  const [cpu_percent, disk, svc, av, patch] = await Promise.all([
+  const [cpu_percent, disk, svc, av, patch, pings] = await Promise.all([
     system.cpuPercent(),
     disks(),
     services(cfg),
     avStatus(cfg),
     patchStatus(),
+    pingTargets(cfg),
   ]);
 
   const mem = system.memory();
@@ -30,6 +32,7 @@ async function collectReport(cfg) {
     services: svc,
     av,
     patch,
+    pings,
     meta: system.meta(AGENT_VERSION),
   };
 }

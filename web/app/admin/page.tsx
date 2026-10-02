@@ -261,6 +261,7 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
   const [onCheck, setOnCheck] = useState(true);
   const [onOffline, setOnOffline] = useState(true);
   const [onCrit, setOnCrit] = useState(true);
+  const [onPing, setOnPing] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -276,6 +277,7 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
       setOnCheck(c.on_check_fail);
       setOnOffline(c.on_offline);
       setOnCrit(c.on_crit_stopped);
+      setOnPing(c.on_ping_down);
       setTeams('');
       setEmailKey('');
       setFdKey('');
@@ -302,6 +304,7 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
         on_check_fail: onCheck,
         on_offline: onOffline,
         on_crit_stopped: onCrit,
+        on_ping_down: onPing,
       };
       if (teams.trim()) body.teams_webhook_url = teams.trim();
       if (emailKey.trim()) body.email_api_key = emailKey.trim();
@@ -512,6 +515,10 @@ function AlertsSection({ onError }: { onError: (m: string) => void }) {
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={onCrit} onChange={(e) => setOnCrit(e.target.checked)} />
               a critical service stops
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={onPing} onChange={(e) => setOnPing(e.target.checked)} />
+              a LAN device stops responding to ping
             </label>
           </div>
         </div>

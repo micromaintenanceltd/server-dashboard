@@ -14,6 +14,7 @@ export interface AlertConfig {
   on_check_fail: boolean;
   on_offline: boolean;
   on_crit_stopped: boolean;
+  on_ping_down: boolean;
 }
 
 const DEFAULTS: AlertConfig = {
@@ -28,9 +29,10 @@ const DEFAULTS: AlertConfig = {
   on_check_fail: true,
   on_offline: true,
   on_crit_stopped: true,
+  on_ping_down: true,
 };
 
-export type AlertKind = 'offline' | 'crit' | 'check';
+export type AlertKind = 'offline' | 'crit' | 'check' | 'ping';
 export type Severity = 'critical' | 'good';
 export interface AlertMessage {
   title: string;
@@ -53,6 +55,7 @@ export async function loadAlertConfig(db: D1Database): Promise<AlertConfig> {
     on_check_fail: row.on_check_fail !== 0,
     on_offline: row.on_offline !== 0,
     on_crit_stopped: row.on_crit_stopped !== 0,
+    on_ping_down: row.on_ping_down == null ? true : row.on_ping_down !== 0,
   };
 }
 
@@ -295,6 +298,19 @@ export function buildMessage(
           lines: [who, o.detail ? `Service running again: ${o.detail}` : 'Watched critical services are running again.'],
         };
   }
+  if (kind === 'ping') {
+    return bad
+      ? {
+          severity: 'critical',
+          title: `Not responding${o.detail ? `: ${o.detail}` : ''} (via ${o.serverName})`,
+          lines: [who, o.detail ? `No ping response from ${o.detail}.` : 'A monitored LAN device is not responding to ping.'],
+        }
+      : {
+          severity: 'good',
+          title: `Responding again${o.detail ? `: ${o.detail}` : ''} (via ${o.serverName})`,
+          lines: [who, o.detail ? `${o.detail} is responding to ping again.` : 'The monitored LAN device is responding again.'],
+        };
+  }
   // check
   return bad
     ? {
@@ -327,7 +343,9 @@ export async function evaluateAlert(
       ? cfg.on_offline
       : opts.kind === 'crit'
         ? cfg.on_crit_stopped
-        : cfg.on_check_fail;
+        : opts.kind === 'ping'
+          ? cfg.on_ping_down
+          : cfg.on_check_fail;
   if (!enabled) return;
 
   const key = opts.stateKey || opts.kind;

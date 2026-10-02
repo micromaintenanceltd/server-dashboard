@@ -62,6 +62,14 @@ function loadConfig() {
   cfg.watchServices = Array.isArray(cfg.watchServices) ? cfg.watchServices : [];
   cfg.topProcessCount = Number.isInteger(cfg.topProcessCount) ? cfg.topProcessCount : 5;
 
+  // LAN ping monitors: [{ name, host }]. The agent pings each and the dashboard
+  // alerts when one stops responding.
+  cfg.pingTargets = Array.isArray(cfg.pingTargets)
+    ? cfg.pingTargets
+        .filter((t) => t && t.host)
+        .map((t) => ({ name: String(t.name || t.host).trim(), host: String(t.host).trim() }))
+    : [];
+
   // Weekly checks config: default the section and the schedule so older config
   // files (written before checks existed) still run.
   cfg.checks = cfg.checks && typeof cfg.checks === 'object' ? cfg.checks : {};

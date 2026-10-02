@@ -253,6 +253,8 @@ function AttentionRow({ server }: { server: ServerListItem }) {
     reasons.push({ label: 'Check warning', cls: 'text-status-stale' });
   const stopped = server.latest?.services?.stopped_critical?.length ?? 0;
   if (stopped > 0) reasons.push({ label: `${stopped} critical stopped`, cls: 'text-status-offline' });
+  const down = pingsDown(server);
+  if (down > 0) reasons.push({ label: `${down} LAN down`, cls: 'text-status-offline' });
 
   return (
     <li>
@@ -380,11 +382,16 @@ function countChecks(servers: ServerListItem[]): Record<CheckStatus | 'none', nu
   return out;
 }
 
+function pingsDown(s: ServerListItem): number {
+  return (s.latest?.pings ?? []).filter((p) => p.ok === false).length;
+}
+
 function needsAttention(s: ServerListItem): boolean {
   if (s.status === 'offline' || s.status === 'stale') return true;
   if (s.latest_check && (s.latest_check.overall_status === 'fail' || s.latest_check.overall_status === 'warn'))
     return true;
   if ((s.latest?.services?.stopped_critical?.length ?? 0) > 0) return true;
+  if (pingsDown(s) > 0) return true;
   return false;
 }
 
@@ -451,6 +458,9 @@ function FleetCell({ server }: { server: ServerListItem }) {
           </>
         ) : (
           <span className="text-slate-400">No check</span>
+        )}
+        {pingsDown(server) > 0 && (
+          <span className="font-medium text-status-offline">· {pingsDown(server)} LAN down</span>
         )}
         <span className="ml-auto">{relativeAge(server.last_seen_at)}</span>
       </div>
