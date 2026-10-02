@@ -296,6 +296,7 @@ function ServerTable({ servers }: { servers: ServerListItem[] }) {
             <th className="px-4 py-2.5">RAM</th>
             <th className="px-4 py-2.5">Disk</th>
             <th className="px-4 py-2.5">Weekly check</th>
+            <th className="px-4 py-2.5">Version</th>
             <th className="px-4 py-2.5">Last seen</th>
           </tr>
         </thead>
@@ -386,6 +387,9 @@ function ServerRow({ server }: { server: ServerListItem }) {
         ) : (
           <span className="text-slate-400">—</span>
         )}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 align-middle text-xs text-slate-500">
+        {server.agent_version ? `v${server.agent_version}` : '—'}
       </td>
       <td className="whitespace-nowrap px-4 py-3 align-middle text-slate-500">
         {relativeAge(server.last_seen_at)}
@@ -486,7 +490,10 @@ function ServerCard({ server }: { server: ServerListItem }) {
       </div>
 
       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>Last seen {relativeAge(server.last_seen_at)}</span>
+        <span>
+          Last seen {relativeAge(server.last_seen_at)}
+          {server.agent_version ? ` · v${server.agent_version}` : ''}
+        </span>
         {stoppedCritical.length > 0 && (
           <span className="inline-flex items-center gap-1 font-medium text-status-offline">
             <WarnIcon />

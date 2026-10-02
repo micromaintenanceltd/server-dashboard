@@ -92,6 +92,7 @@ export default function AdminPage() {
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Client</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Version</th>
                 <th className="px-4 py-2 font-medium">Key</th>
                 <th className="px-4 py-2 font-medium">Last seen</th>
                 <th className="px-4 py-2 text-right font-medium">Actions</th>
@@ -778,6 +779,9 @@ function ServerRow({
         ) : (
           <StatusBadge status={server.status} />
         )}
+      </td>
+      <td className="px-4 py-2 text-xs text-slate-600">
+        {server.agent_version ? `v${server.agent_version}` : '—'}
       </td>
       <td className="px-4 py-2 font-mono text-xs text-slate-500">
         {server.api_key_prefix ? `${server.api_key_prefix}...` : 'n/a'}

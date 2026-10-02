@@ -79,6 +79,7 @@ export interface ServerListItem {
   desired_state: DesiredState;
   last_seen_at: string | null;
   api_key_prefix: string | null;
+  agent_version: string | null;
   latest: LatestSummary | null;
   latest_check: CheckSummary | null;
 }

@@ -1062,7 +1062,7 @@ app.get('/api/servers', async (c) => {
     `SELECT s.id, s.name, s.client_name, s.location, s.current_status, s.desired_state,
             s.created_at, s.last_seen_at, s.api_key_prefix,
             r.cpu_percent, r.ram_used_mb, r.ram_total_mb, r.disk_json,
-            r.uptime_seconds, r.services_json, r.reported_at,
+            r.uptime_seconds, r.services_json, r.meta_json, r.reported_at,
             cr.overall_status AS check_status, cr.fail_count AS check_fail,
             cr.warn_count AS check_warn, cr.pass_count AS check_pass,
             cr.run_at AS check_run_at
@@ -1085,6 +1085,7 @@ app.get('/api/servers', async (c) => {
     desired_state: row.desired_state,
     last_seen_at: row.last_seen_at,
     api_key_prefix: row.api_key_prefix,
+    agent_version: safeParse<{ agent_version?: string }>(row.meta_json, {}).agent_version ?? null,
     latest: row.reported_at
       ? {
           cpu_percent: row.cpu_percent,
