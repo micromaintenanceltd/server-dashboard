@@ -48,7 +48,7 @@ export default function AdminPage() {
   }, [load]);
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-5 sm:px-8 sm:py-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
         <p className="text-sm text-slate-500">
@@ -86,7 +86,8 @@ export default function AdminPage() {
         ) : servers.length === 0 ? (
           <p className="px-4 py-6 text-sm text-slate-500">No devices yet. Add one above.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="px-4 py-2 font-medium">Name</th>
@@ -113,6 +114,7 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 

@@ -60,7 +60,7 @@ function ServerDetailInner() {
 
   if (error) {
     return (
-      <div className="px-8 py-6">
+      <div className="px-4 py-5 sm:px-8 sm:py-6">
         <BackLink />
         <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}

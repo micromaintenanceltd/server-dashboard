@@ -117,7 +117,7 @@ export default function ReportsPage() {
   const checkTotals = countChecks(rows);
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-5 sm:px-8 sm:py-6">
       {/* Controls (hidden when printing) */}
       <div className="no-print">
         <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -249,6 +249,7 @@ export default function ReportsPage() {
           {rows.length === 0 ? (
             <p className="py-6 text-sm text-slate-500">No devices match these filters.</p>
           ) : (
+            <div className="overflow-x-auto print:overflow-visible">
             <table className="min-w-full border-t border-slate-200 text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -316,6 +317,7 @@ export default function ReportsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

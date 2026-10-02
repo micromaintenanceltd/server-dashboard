@@ -11,11 +11,15 @@ export function Sidebar({
   onSignOut,
   collapsed,
   onToggle,
+  mobileOpen = false,
+  onMobileClose,
 }: {
   user: AuthUser;
   onSignOut: () => void;
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
   const isAdmin = user.role === 'admin';
@@ -32,9 +36,9 @@ export function Sidebar({
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-20 flex flex-col text-slate-200 shadow-xl transition-[width] duration-200 ${
+      className={`fixed inset-y-0 left-0 z-30 flex flex-col text-slate-200 shadow-xl transition-[width,transform] duration-200 ${
         collapsed ? 'w-16' : 'w-60'
-      }`}
+      } ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       style={{ backgroundImage: 'linear-gradient(180deg, #0a2440 0%, #0b1526 100%)' }}
     >
       <div
@@ -56,7 +60,7 @@ export function Sidebar({
         title={collapsed ? 'Expand menu' : 'Collapse menu'}
         aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
         aria-expanded={!collapsed}
-        className={`mb-1 flex items-center rounded-md py-1.5 text-slate-300 transition-colors hover:bg-white/5 hover:text-white ${
+        className={`mb-1 hidden items-center rounded-md py-1.5 text-slate-300 transition-colors hover:bg-white/5 hover:text-white lg:flex ${
           collapsed ? 'mx-2 justify-center' : 'mx-3 justify-end px-2'
         }`}
       >
@@ -74,6 +78,7 @@ export function Sidebar({
             <Link
               key={item.href}
               href={item.href}
+              onClick={onMobileClose}
               title={collapsed ? item.label : undefined}
               className={`flex items-center rounded-md py-2 text-sm font-medium transition-colors ${
                 collapsed ? 'justify-center px-0' : 'gap-3 px-3'

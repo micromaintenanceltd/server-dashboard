@@ -97,6 +97,8 @@ function Shell({
 }) {
   const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const isDesktop = useIsDesktop();
 
   // Restore the saved collapse preference (per browser) after mount.
   useEffect(() => {
@@ -104,6 +106,11 @@ function Shell({
       setCollapsed(localStorage.getItem('mml_sidebar_collapsed') === '1');
     } catch {}
   }, []);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((c) => {
@@ -118,15 +125,75 @@ function Shell({
   if (loading) return <Splash>Loading...</Splash>;
   if (pathname === '/login') return <>{children}</>;
   if (!user) return <Splash>Redirecting to sign in...</Splash>;
+
+  // On phones/tablets the sidebar is a slide-in drawer (always full width when
+  // open); the collapse-to-icons preference only applies on desktop (lg+).
+  const effectiveCollapsed = isDesktop ? collapsed : false;
+
   return (
     <ClientLogosProvider>
-      <Sidebar user={user} onSignOut={signOut} collapsed={collapsed} onToggle={toggleCollapsed} />
-      <main
-        className={`min-h-screen transition-[margin] duration-200 ${collapsed ? 'ml-16' : 'ml-60'}`}
+      {/* Backdrop behind the mobile drawer. */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          aria-hidden="true"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <Sidebar
+        user={user}
+        onSignOut={signOut}
+        collapsed={effectiveCollapsed}
+        onToggle={toggleCollapsed}
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobileOpen(false)}
+      />
+
+      <div
+        className={`min-h-screen transition-[margin] duration-200 ml-0 ${
+          collapsed ? 'lg:ml-16' : 'lg:ml-60'
+        }`}
       >
-        {children}
-      </main>
+        {/* Mobile top bar with the menu button (hidden on desktop). */}
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-2.5 backdrop-blur lg:hidden">
+          <button
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+            className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100"
+          >
+            <MenuIcon />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="" className="brand-chip h-7 w-7 p-1" />
+          <span className="text-sm font-semibold text-slate-800">Dashboard</span>
+        </header>
+
+        <main>{children}</main>
+      </div>
     </ClientLogosProvider>
+  );
+}
+
+// True on desktop (lg: ≥1024px). Drives whether the sidebar is a fixed rail or a
+// slide-in drawer.
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isDesktop;
+}
+
+function MenuIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M3 6h18M3 12h18M3 18h18" />
+    </svg>
   );
 }
 

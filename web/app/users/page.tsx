@@ -37,7 +37,7 @@ export default function UsersPage() {
 
   if (user && user.role !== 'admin') {
     return (
-      <div className="px-8 py-6">
+      <div className="px-4 py-5 sm:px-8 sm:py-6">
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           This page is for admins only.
         </p>
@@ -46,7 +46,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-5 sm:px-8 sm:py-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Users</h1>
         <p className="text-sm text-slate-500">Manage who can sign in to the dashboard and their role.</p>
@@ -67,7 +67,8 @@ export default function UsersPage() {
         {loading ? (
           <p className="px-4 py-6 text-sm text-slate-500">Loading...</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="px-4 py-2 font-medium">Email</th>
@@ -90,6 +91,7 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>
