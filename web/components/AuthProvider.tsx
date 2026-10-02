@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { fetchMe, getToken, clearToken } from '@/lib/api';
 import type { AuthUser } from '@/lib/types';
@@ -100,6 +100,14 @@ function Shell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const isDesktop = useIsDesktop();
 
+  // When a newer version has been deployed, reload at the next navigation so an
+  // open tab stops serving stale UI (what caused "it goes back to bars").
+  const stale = useAppVersionStale();
+  const staleRef = useRef(false);
+  useEffect(() => {
+    staleRef.current = stale;
+  }, [stale]);
+
   // Restore the saved collapse preference (per browser) after mount.
   useEffect(() => {
     try {
@@ -107,9 +115,11 @@ function Shell({
     } catch {}
   }, []);
 
-  // Close the mobile drawer whenever the route changes.
+  // Close the mobile drawer whenever the route changes; and if a new version is
+  // live, hard-reload at this navigation boundary to pick up the new bundle.
   useEffect(() => {
     setMobileOpen(false);
+    if (staleRef.current) window.location.reload();
   }, [pathname]);
 
   const toggleCollapsed = useCallback(() => {
@@ -173,6 +183,37 @@ function Shell({
       </div>
     </ClientLogosProvider>
   );
+}
+
+// Polls /version.txt (written at build time with the deploy commit) and returns
+// true once it differs from the version baked into this bundle — i.e. a newer
+// deploy is live. Disabled locally (version 'dev'); never loops, because after a
+// reload the bundle's version matches version.txt again.
+function useAppVersionStale() {
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    const baked = process.env.NEXT_PUBLIC_APP_VERSION || 'dev';
+    if (!baked || baked === 'dev') return;
+    let active = true;
+    const check = async () => {
+      try {
+        const r = await fetch(`/version.txt?t=${Date.now()}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const v = (await r.text()).trim();
+        // Ignore an unstamped 'dev' file so a mis-set build can't loop reloads.
+        if (active && v && v !== 'dev' && v !== baked) setStale(true);
+      } catch {
+        /* offline / transient — ignore */
+      }
+    };
+    check();
+    const id = setInterval(check, 60_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+  return stale;
 }
 
 // True on desktop (lg: ≥1024px). Drives whether the sidebar is a fixed rail or a
