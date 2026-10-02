@@ -58,22 +58,6 @@ export default function KioskPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      {/* Controls (subtle, top-right) */}
-      <div className="fixed right-3 top-3 z-20 flex items-center gap-2 opacity-40 transition-opacity hover:opacity-100">
-        <button
-          onClick={toggleFs}
-          className="rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
-        >
-          {fs ? 'Exit full screen' : 'Full screen'}
-        </button>
-        <Link
-          href="/"
-          className="rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
-        >
-          Exit kiosk
-        </Link>
-      </div>
-
       <div className="mx-auto max-w-[2400px] px-6 py-6">
         {/* Header */}
         <header className="mb-5 flex items-center justify-between gap-4">
@@ -87,7 +71,25 @@ export default function KioskPage() {
               </div>
             </div>
           </div>
-          <Clock size="lg" tone="dark" />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleFs}
+              title={fs ? 'Exit full screen' : 'Full screen'}
+              aria-label={fs ? 'Exit full screen' : 'Full screen'}
+              className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              {fs ? <MinimizeIcon /> : <MaximizeIcon />}
+            </button>
+            <Link
+              href="/"
+              title="Exit kiosk"
+              aria-label="Exit kiosk"
+              className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              <HomeIcon />
+            </Link>
+            <Clock size="lg" tone="dark" />
+          </div>
         </header>
 
         {/* Offline banner */}
@@ -169,8 +171,8 @@ function Cell({ server }: { server: ServerListItem }) {
     <div className={`rounded-xl border border-slate-800 border-l-4 ${border} ${bg} p-3`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-base font-semibold text-white">{server.name}</div>
-          <div className="truncate text-xs text-slate-400">{server.client_name}</div>
+          <div className="truncate text-base font-semibold text-white">{server.client_name}</div>
+          <div className="truncate text-xs text-slate-400">{server.name}</div>
         </div>
         <span className={`mt-1 h-3 w-3 shrink-0 rounded-full bg-status-${s}`} title={s} />
       </div>
@@ -211,6 +213,29 @@ function Stat({ label, v }: { label: string; v: number | null }) {
 
 function checkDot(s: 'pass' | 'warn' | 'fail'): ServerStatus {
   return s === 'fail' ? 'offline' : s === 'warn' ? 'stale' : 'online';
+}
+
+function MaximizeIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+function MinimizeIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m8 0v-3a2 2 0 0 1 2-2h3" />
+    </svg>
+  );
+}
+function HomeIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M9 22V12h6v10" />
+    </svg>
+  );
 }
 
 // Sort worst-first so problems float to the top-left of the wall.
