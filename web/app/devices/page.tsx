@@ -7,6 +7,7 @@ import { fetchServers } from '@/lib/api';
 import type { ServerListItem, ServersResponse, ServerStatus, CheckStatus } from '@/lib/types';
 import { StatusBadge, StatusDot } from '@/components/StatusBadge';
 import { Dial } from '@/components/Dial';
+import { Clock } from '@/components/Clock';
 import { relativeAge, formatMb, CHECK_META } from '@/lib/format';
 import { ClientLogo } from '@/components/ClientLogo';
 
@@ -87,7 +88,7 @@ function DevicesInner() {
 
   return (
     <div className="px-4 py-5 sm:px-8 sm:py-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Devices</h1>
           <p className="text-sm text-slate-500">
@@ -95,14 +96,18 @@ function DevicesInner() {
             {POLL_MS / 1000}s · last updated {relativeAge(new Date(lastRefresh).toISOString())}
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <StatusCounts counts={counts} />
+        <Clock />
+      </header>
+
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <StatusCounts counts={counts} />
+        <div className="flex items-center gap-3">
           <ViewToggle view={view} onChange={changeView} />
           <button onClick={load} className="btn-ghost px-3 py-1.5">
             Refresh
           </button>
         </div>
-      </header>
+      </div>
 
       <FilterBar
         all={all}

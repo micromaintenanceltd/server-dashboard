@@ -160,6 +160,23 @@ export async function fetchServer(id: string): Promise<ServerDetail> {
   return request(`/api/servers/${encodeURIComponent(id)}`);
 }
 
+export interface UptimeOutage {
+  start: number;
+  end: number;
+  ongoing?: boolean;
+}
+export interface UptimeResponse {
+  staleMinutes: number;
+  windowStart: number;
+  now: number;
+  firstReport: number | null;
+  lastReport: number | null;
+  outages: UptimeOutage[];
+}
+export async function fetchUptime(id: string): Promise<UptimeResponse> {
+  return request(`/api/servers/${encodeURIComponent(id)}/uptime`);
+}
+
 export interface CreatedServer {
   server: { id: string; name: string; client_name: string; location: string | null };
   api_key: string;

@@ -8,7 +8,7 @@ import type { ServerDetail } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineChart, type ChartPoint } from '@/components/LineChart';
 import { UsageBar } from '@/components/UsageBar';
-import { UptimeBar } from '@/components/UptimeBar';
+import { UptimeCalendar } from '@/components/UptimeCalendar';
 import { formatUkDateTime, relativeAge, formatUptime, formatMb, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
@@ -158,10 +158,10 @@ function ServerDetailInner() {
         </MetricCard>
       </section>
 
-      {/* Uptime history (derived from report gaps) */}
-      <section className="card mb-6 p-5">
+      {/* Uptime history (30-day calendar derived from report gaps) */}
+      <section className="card mb-6 overflow-visible p-5">
         <h2 className="mb-3 text-sm font-semibold text-slate-800">Uptime history</h2>
-        <UptimeBar history={history} />
+        <UptimeCalendar serverId={server.id} />
       </section>
 
       {/* Trend charts */}

@@ -1220,6 +1220,49 @@ app.get('/api/servers/:id', async (c) => {
   });
 });
 
+// --- GET /api/servers/:id/uptime : 30-day outage timeline -----------------
+// Returns the device's downtime windows over the last 30 days, derived from
+// gaps between its reports (a gap longer than the stale window = offline). The
+// client buckets these into local-day blocks. Payload is tiny (just the gaps),
+// so this stays cheap even though it scans 30 days of report timestamps.
+app.get('/api/servers/:id/uptime', async (c) => {
+  const guard = await requireUser(c);
+  if (guard instanceof Response) return guard;
+
+  const id = c.req.param('id');
+  const staleMin = staleMinutes(c.env);
+  const now = Date.now();
+  const days = 30;
+  const windowStart = now - days * 24 * 3600_000;
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT reported_at FROM server_reports
+     WHERE server_id = ?1 AND reported_at >= ?2
+     ORDER BY reported_at ASC`
+  )
+    .bind(id, new Date(windowStart).toISOString())
+    .all<{ reported_at: string }>();
+
+  const times = (results ?? [])
+    .map((r) => Date.parse(r.reported_at))
+    .filter((t) => !isNaN(t));
+
+  // A gap bigger than the stale window counts as an outage between those reports.
+  const gapMs = staleMin * 60_000;
+  const outages: { start: number; end: number; ongoing?: boolean }[] = [];
+  for (let i = 1; i < times.length; i++) {
+    if (times[i] - times[i - 1] > gapMs) outages.push({ start: times[i - 1], end: times[i] });
+  }
+  const firstReport = times.length ? times[0] : null;
+  const lastReport = times.length ? times[times.length - 1] : null;
+  // Still down now if we haven't heard from it within the stale window.
+  if (lastReport != null && now - lastReport > gapMs) {
+    outages.push({ start: lastReport, end: now, ongoing: true });
+  }
+
+  return c.json({ staleMinutes: staleMin, windowStart, now, firstReport, lastReport, outages });
+});
+
 // --- POST /api/servers : admin creates a server + generates a key ---------
 app.post('/api/servers', async (c) => {
   const guard = await requireAdmin(c);
