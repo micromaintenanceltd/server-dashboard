@@ -7,6 +7,7 @@ import { fetchServers } from '@/lib/api';
 import type { ServerListItem, ServersResponse, ServerStatus, CheckStatus } from '@/lib/types';
 import { StatusDot } from '@/components/StatusBadge';
 import { ClientLogo } from '@/components/ClientLogo';
+import { Clock } from '@/components/Clock';
 import { relativeAge, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
@@ -45,19 +46,31 @@ export default function DashboardPage() {
   const clients = new Set(servers.map((s) => s.client_name)).size;
   const attention = servers.filter(needsAttention);
 
+  // Fleet-wide aggregates for the wallboard.
+  const online = servers.filter((s) => s.status === 'online');
+  const avgCpu = avg(online.map((s) => s.latest?.cpu_percent).filter(isNum));
+  const avgRam = avg(
+    online
+      .map((s) => (s.latest && s.latest.ram_total_mb ? ((s.latest.ram_used_mb ?? 0) / s.latest.ram_total_mb) * 100 : null))
+      .filter(isNum)
+  );
+  const disksOver = servers.filter((s) => worstDiskUsed(s) != null && (worstDiskUsed(s) as number) >= 90).length;
+  const critStopped = servers.reduce((a, s) => a + (s.latest?.services?.stopped_critical?.length ?? 0), 0);
+
   return (
     <div className="px-8 py-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
           <p className="text-sm text-slate-500">
             Overview · auto refresh every {POLL_MS / 1000}s · last updated{' '}
             {relativeAge(new Date(lastRefresh).toISOString())}
           </p>
+          <button onClick={load} className="btn-ghost mt-2 px-3 py-1.5">
+            Refresh
+          </button>
         </div>
-        <button onClick={load} className="btn-ghost px-3 py-1.5">
-          Refresh
-        </button>
+        <Clock size="lg" />
       </header>
 
       {error && (
@@ -95,24 +108,12 @@ export default function DashboardPage() {
           )}
 
           {/* KPI cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <KpiCard
               label="Devices"
               value={servers.length}
               href="/devices/"
-              footer={
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                  {(['online', 'stale', 'offline', 'pending'] as ServerStatus[]).map(
-                    (st) =>
-                      status[st] > 0 && (
-                        <span key={st} className="inline-flex items-center gap-1">
-                          <span className={`h-2 w-2 rounded-full bg-status-${st}`} />
-                          {status[st]} {st}
-                        </span>
-                      )
-                  )}
-                </div>
-              }
+              footer={<span className="text-xs text-slate-500">{clients} clients</span>}
             />
             <KpiCard
               label="Online"
@@ -122,22 +123,53 @@ export default function DashboardPage() {
               footer={<span className="text-xs text-slate-500">of {servers.length} devices</span>}
             />
             <KpiCard
-              label="Needs attention"
-              value={attention.length}
-              accent={attention.length ? 'text-status-offline' : 'text-status-online'}
+              label="Offline"
+              value={status.offline ?? 0}
+              accent={status.offline ? 'text-status-offline' : 'text-slate-900'}
               href="/devices/?status=offline"
               footer={
                 <span className="text-xs text-slate-500">
-                  {checks.fail} check {checks.fail === 1 ? 'failure' : 'failures'} · {status.offline ?? 0} offline
+                  {status.stale ?? 0} stale · {status.pending ?? 0} pending
                 </span>
               }
             />
             <KpiCard
-              label="Clients"
-              value={clients}
-              footer={<span className="text-xs text-slate-500">distinct companies</span>}
+              label="Check failures"
+              value={checks.fail}
+              accent={checks.fail ? 'text-status-offline' : 'text-status-online'}
+              href="/devices/?check=fail"
+              footer={<span className="text-xs text-slate-500">{checks.warn} warnings</span>}
+            />
+            <KpiCard
+              label="Disks ≥ 90%"
+              value={disksOver}
+              accent={disksOver ? 'text-status-stale' : 'text-status-online'}
+              footer={<span className="text-xs text-slate-500">{critStopped} crit. svc stopped</span>}
+            />
+            <KpiCard
+              label="Avg load"
+              value={avgCpu != null ? `${Math.round(avgCpu)}%` : '—'}
+              accent={cpuAccent(avgCpu)}
+              footer={
+                <span className="text-xs text-slate-500">
+                  RAM {avgRam != null ? `${Math.round(avgRam)}%` : '—'} · online avg
+                </span>
+              }
             />
           </div>
+
+          {/* Full fleet at a glance */}
+          <section className="card mt-4 overflow-hidden">
+            <div className="panel-header flex items-center justify-between border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+              <span>Fleet status</span>
+              <span className="text-xs font-normal text-slate-500">{servers.length} devices</span>
+            </div>
+            <div className="grid grid-cols-2 gap-px bg-slate-100 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+              {servers.map((s) => (
+                <FleetCell key={s.id} server={s} />
+              ))}
+            </div>
+          </section>
 
           {/* Weekly checks + attention */}
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -354,4 +386,93 @@ function needsAttention(s: ServerListItem): boolean {
     return true;
   if ((s.latest?.services?.stopped_critical?.length ?? 0) > 0) return true;
   return false;
+}
+
+function avg(xs: number[]): number | null {
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+function isNum(x: unknown): x is number {
+  return typeof x === 'number' && !isNaN(x);
+}
+// Highest used% across a device's disks (100 - the lowest free%).
+function worstDiskUsed(s: ServerListItem): number | null {
+  const disks = s.latest?.disk ?? [];
+  if (!disks.length) return null;
+  return 100 - Math.min(...disks.map((d) => d.free_percent));
+}
+function cpuAccent(v: number | null): string {
+  if (v == null) return 'text-slate-900';
+  return v >= 90 ? 'text-status-offline' : v >= 75 ? 'text-status-stale' : 'text-status-online';
+}
+
+// One compact cell in the fleet grid: status-coloured, with CPU/RAM/Disk and the
+// weekly-check result, so an office TV shows the whole estate at a glance.
+function FleetCell({ server }: { server: ServerListItem }) {
+  const cpu = server.latest?.cpu_percent ?? null;
+  const ram =
+    server.latest && server.latest.ram_total_mb
+      ? ((server.latest.ram_used_mb ?? 0) / server.latest.ram_total_mb) * 100
+      : null;
+  const disk = worstDiskUsed(server);
+  const offline = server.status === 'offline';
+  const stale = server.status === 'stale';
+  const accent = offline
+    ? 'border-l-status-offline'
+    : stale
+      ? 'border-l-status-stale'
+      : server.status === 'pending'
+        ? 'border-l-slate-300'
+        : 'border-l-status-online';
+
+  return (
+    <Link
+      href={`/server/?id=${encodeURIComponent(server.id)}`}
+      className={`block border-l-4 ${accent} p-3 transition-colors hover:bg-slate-50 ${
+        offline ? 'bg-red-50' : 'bg-white'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-900">{server.name}</div>
+          <div className="truncate text-[11px] text-slate-500">{server.client_name}</div>
+        </div>
+        <StatusDot status={server.status} />
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1 text-center">
+        <Stat label="CPU" v={cpu} />
+        <Stat label="RAM" v={ram} />
+        <Stat label="Disk" v={disk} />
+      </div>
+      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+        {server.latest_check ? (
+          <>
+            <span className={`h-2 w-2 rounded-full ${CHECK_META[server.latest_check.overall_status].dot}`} />
+            {CHECK_META[server.latest_check.overall_status].label}
+          </>
+        ) : (
+          <span className="text-slate-400">No check</span>
+        )}
+        <span className="ml-auto">{relativeAge(server.last_seen_at)}</span>
+      </div>
+    </Link>
+  );
+}
+
+function Stat({ label, v }: { label: string; v: number | null }) {
+  const cls =
+    v == null
+      ? 'text-slate-400'
+      : v >= 90
+        ? 'text-status-offline'
+        : v >= 75
+          ? 'text-status-stale'
+          : 'text-slate-700';
+  return (
+    <div>
+      <div className={`text-sm font-semibold tabular-nums ${cls}`}>
+        {v == null ? '—' : `${Math.round(v)}%`}
+      </div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+    </div>
+  );
 }
