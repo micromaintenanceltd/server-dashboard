@@ -70,6 +70,30 @@ export default function DashboardPage() {
         <p className="text-sm text-slate-500">Loading…</p>
       ) : (
         <>
+          {/* Unmissable banner whenever any device is offline. */}
+          {(status.offline ?? 0) > 0 && (
+            <Link
+              href="/devices/?status=offline"
+              className="mb-4 flex items-start gap-3 rounded-lg border-l-4 border-status-offline bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200 transition-colors hover:bg-red-100"
+            >
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-status-offline text-xs font-bold text-white">
+                !
+              </span>
+              <div>
+                <span className="font-semibold">
+                  {status.offline} {status.offline === 1 ? 'device is' : 'devices are'} offline
+                </span>
+                <span className="text-red-700">
+                  {' — '}
+                  {servers
+                    .filter((s) => s.status === 'offline')
+                    .map((s) => s.name)
+                    .join(', ')}
+                </span>
+              </div>
+            </Link>
+          )}
+
           {/* KPI cards */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <KpiCard

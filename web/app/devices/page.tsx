@@ -445,8 +445,19 @@ function ServerCard({ server }: { server: ServerListItem }) {
   const stoppedCritical = latest?.services?.stopped_critical ?? [];
   const disks = latest?.disk ?? [];
 
+  // Make an offline device impossible to miss (red), and a stale one amber.
+  const statusClass =
+    server.status === 'offline'
+      ? 'border-status-offline bg-red-50 ring-1 ring-status-offline/40'
+      : server.status === 'stale'
+        ? 'border-status-stale bg-amber-50'
+        : '';
+
   return (
-    <Link href={`/server/?id=${encodeURIComponent(server.id)}`} className="card card-hover block p-3">
+    <Link
+      href={`/server/?id=${encodeURIComponent(server.id)}`}
+      className={`card card-hover block p-3 ${statusClass}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <ClientLogo client={server.client_name} size={30} />
