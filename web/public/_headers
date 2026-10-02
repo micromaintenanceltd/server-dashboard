@@ -1,16 +1,20 @@
 # Cloudflare Pages headers.
 #
-# HTML pages and other non-hashed files must always be revalidated, so a new
-# deploy is picked up on the next load instead of a stale copy lingering in the
-# browser cache (this is what left Firefox showing the old device tiles).
-/*
+# HTML pages must always be revalidated so a new deploy is picked up on the next
+# load instead of a stale copy lingering in the browser cache (this is what left
+# Firefox showing the old device tiles). With trailingSlash, every page is served
+# at a path ending in "/", so these two rules cover them without also matching the
+# content-hashed assets under /_next/static (which end in .js/.css, not "/").
+/
   Cache-Control: no-cache
 
-# Everything under /_next/static is content-hashed by Next.js, so it can be
-# cached immutably - a new build produces new filenames.
-/_next/static/*
-  Cache-Control: public, max-age=31536000, immutable
+/*/
+  Cache-Control: no-cache
 
 # The version stamp the app polls to detect a new deploy - never cache it.
 /version.txt
   Cache-Control: no-cache
+
+# Content-hashed by Next.js: safe to cache forever (a new build = new filenames).
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
