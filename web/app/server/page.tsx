@@ -29,6 +29,7 @@ function ServerDetailInner() {
   const [data, setData] = useState<ServerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'resources' | 'services' | 'antivirus' | 'updates'>('resources');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -94,6 +95,8 @@ function ServerDetailInner() {
   const patch = (latest_report?.patch ?? {}) as Record<string, any>;
   const meta = (latest_report?.meta ?? {}) as Record<string, any>;
   const services = latest_report?.services;
+  const reboot = (meta.reboot ?? {}) as Record<string, any>;
+  const pendingList: any[] = Array.isArray(patch.pending_list) ? patch.pending_list : [];
 
   return (
     <div className="px-4 py-5 sm:px-8 sm:py-6">
@@ -157,7 +160,35 @@ function ServerDetailInner() {
             {meta.hostname ? `${meta.hostname} · ` : ''}
             {meta.os_version || ''}
           </div>
+          {reboot.last_boot_at && (
+            <div className="mt-1 text-xs text-slate-400">
+              since {formatUkDateTime(reboot.last_boot_at)}
+            </div>
+          )}
         </MetricCard>
+      </section>
+
+      {/* Last restart (time + reason from the event log) */}
+      {(reboot.last_boot_at || reboot.reason) && (
+        <section className="card mb-6 p-4">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-sm font-semibold text-slate-800">Last restart</span>
+            {reboot.last_boot_at && (
+              <span className="text-sm text-slate-600">
+                {formatUkDateTime(reboot.last_boot_at)}{' '}
+                <span className="text-slate-400">({relativeAge(reboot.last_boot_at)})</span>
+              </span>
+            )}
+          </div>
+          {reboot.reason && <p className="mt-1 text-xs text-slate-500">{reboot.reason}</p>}
+        </section>
+      )}
+
+      {/* Weekly checks (near the top) */}
+      <section className="mb-6">
+        <Panel title="Weekly checks">
+          <WeeklyChecks latest={latest_check} history={check_history} />
+        </Panel>
       </section>
 
       {/* Uptime history (30-day calendar) + internet speed */}
@@ -170,34 +201,6 @@ function ServerDetailInner() {
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Internet speed</h2>
           <SpeedCard tests={speedtests} />
         </div>
-      </section>
-
-      {/* Trend charts */}
-      <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="CPU usage (last 7 days)">
-          <LineChart points={cpuSeries} color="#2563eb" fixed0to100 unit="%" />
-        </Panel>
-        <Panel title="Memory usage (last 7 days)">
-          <LineChart points={ramSeries} color="#7c3aed" fixed0to100 unit="%" />
-        </Panel>
-        <Panel title="Busiest disk used % (last 7 days)">
-          <LineChart points={diskSeries} color="#0891b2" fixed0to100 unit="%" />
-        </Panel>
-        <Panel title="Disk volumes (latest)">
-          <div className="space-y-3">
-            {(latest_report?.disk ?? []).length === 0 && (
-              <p className="text-sm text-slate-400">No disk data.</p>
-            )}
-            {(latest_report?.disk ?? []).map((d) => (
-              <UsageBar
-                key={d.mount}
-                percent={100 - d.free_percent}
-                label={`${d.mount} (${d.used_gb} / ${d.total_gb} GB)`}
-                sublabel={`${Math.round(100 - d.free_percent)}% used · ${d.free_percent}% free`}
-              />
-            ))}
-          </div>
-        </Panel>
       </section>
 
       {/* LAN ping monitors */}
@@ -225,13 +228,69 @@ function ServerDetailInner() {
         </section>
       )}
 
-      {/* Services + AV + Patch */}
-      <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="Watched services">
-          <ServicesList services={services} />
-        </Panel>
-        <div className="space-y-4">
-          <Panel title="Antivirus">
+      {/* Details: resources / services / antivirus / updates in one tabbed card */}
+      <section className="card mb-6 overflow-hidden">
+        <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 pt-2">
+          {(
+            [
+              ['resources', 'Resources'],
+              ['services', 'Services'],
+              ['antivirus', 'Antivirus'],
+              ['updates', 'Updates'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`whitespace-nowrap rounded-t-md px-4 py-2 text-sm font-medium transition-colors ${
+                tab === key
+                  ? 'border-b-2 border-brand-600 text-brand-700'
+                  : 'border-b-2 border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {label}
+              {key === 'updates' && patch.pending_updates ? (
+                <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                  {patch.pending_updates}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-5">
+          {tab === 'resources' && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <TabChart title="CPU usage (7 days)">
+                <LineChart points={cpuSeries} color="#2563eb" fixed0to100 unit="%" />
+              </TabChart>
+              <TabChart title="Memory usage (7 days)">
+                <LineChart points={ramSeries} color="#7c3aed" fixed0to100 unit="%" />
+              </TabChart>
+              <TabChart title="Busiest disk used % (7 days)">
+                <LineChart points={diskSeries} color="#0891b2" fixed0to100 unit="%" />
+              </TabChart>
+              <TabChart title="Disk volumes (latest)">
+                <div className="space-y-3">
+                  {(latest_report?.disk ?? []).length === 0 && (
+                    <p className="text-sm text-slate-400">No disk data.</p>
+                  )}
+                  {(latest_report?.disk ?? []).map((d) => (
+                    <UsageBar
+                      key={d.mount}
+                      percent={100 - d.free_percent}
+                      label={`${d.mount} (${d.used_gb} / ${d.total_gb} GB)`}
+                      sublabel={`${Math.round(100 - d.free_percent)}% used · ${d.free_percent}% free`}
+                    />
+                  ))}
+                </div>
+              </TabChart>
+            </div>
+          )}
+
+          {tab === 'services' && <ServicesList services={services} />}
+
+          {tab === 'antivirus' && (
             <KeyVals
               rows={[
                 ['Product', av.product ?? 'unknown'],
@@ -241,32 +300,51 @@ function ServerDetailInner() {
                 ...(av.notes ? [['Notes', String(av.notes)] as [string, string]] : []),
               ]}
             />
-          </Panel>
-          <Panel title="Patch status">
-            <KeyVals
-              rows={[
-                [
-                  'Last update installed',
-                  patch.last_update_installed
-                    ? formatUkDateTime(patch.last_update_installed)
-                    : 'not available',
-                ],
-                [
-                  'Pending updates',
-                  patch.pending_updates != null ? String(patch.pending_updates) : 'not available',
-                ],
-                ...(patch.notes ? [['Notes', String(patch.notes)] as [string, string]] : []),
-              ]}
-            />
-          </Panel>
-        </div>
-      </section>
+          )}
 
-      {/* Weekly checks */}
-      <section className="mb-6">
-        <Panel title="Weekly checks">
-          <WeeklyChecks latest={latest_check} history={check_history} />
-        </Panel>
+          {tab === 'updates' && (
+            <div>
+              <KeyVals
+                rows={[
+                  [
+                    'Last update installed',
+                    patch.last_update_installed
+                      ? formatUkDateTime(patch.last_update_installed)
+                      : 'not available',
+                  ],
+                  [
+                    'Pending updates',
+                    patch.pending_updates != null ? String(patch.pending_updates) : 'not available',
+                  ],
+                  ...(patch.notes ? [['Notes', String(patch.notes)] as [string, string]] : []),
+                ]}
+              />
+              {pendingList.length > 0 && (
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Pending updates
+                  </h3>
+                  <ul className="space-y-1.5">
+                    {pendingList.map((u, i) => {
+                      const sev = String(u.severity || '');
+                      const cats: string[] = Array.isArray(u.categories) ? u.categories : [];
+                      const critical = sev === 'Critical' || cats.includes('Critical Updates');
+                      return (
+                        <li key={i} className="flex items-start gap-2 text-sm">
+                          <SevBadge severity={sev} critical={critical} />
+                          <span className="min-w-0 flex-1 text-slate-700">
+                            {u.title}
+                            {u.kb ? <span className="text-slate-400"> · KB{u.kb}</span> : null}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Raw last report */}
@@ -281,6 +359,31 @@ function ServerDetailInner() {
         </Panel>
       </section>
     </div>
+  );
+}
+
+function TabChart({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function SevBadge({ severity, critical }: { severity: string; critical: boolean }) {
+  const label = critical ? 'Critical' : severity || 'Update';
+  const cls = critical
+    ? 'bg-red-100 text-red-700'
+    : severity === 'Important'
+      ? 'bg-amber-100 text-amber-800'
+      : severity === 'Moderate'
+        ? 'bg-sky-100 text-sky-700'
+        : 'bg-slate-100 text-slate-600';
+  return (
+    <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+      {label}
+    </span>
   );
 }
 
