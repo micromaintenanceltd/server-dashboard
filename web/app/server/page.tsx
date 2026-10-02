@@ -8,6 +8,7 @@ import type { ServerDetail } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineChart, type ChartPoint } from '@/components/LineChart';
 import { UsageBar } from '@/components/UsageBar';
+import { UptimeBar } from '@/components/UptimeBar';
 import { formatUkDateTime, relativeAge, formatUptime, formatMb, CHECK_META } from '@/lib/format';
 
 const POLL_MS = 30_000;
@@ -93,7 +94,7 @@ function ServerDetailInner() {
   const services = latest_report?.services;
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-5 sm:px-8 sm:py-6">
       <BackLink />
 
       <header className="mt-3 mb-6 flex flex-wrap items-start justify-between gap-3">
@@ -155,6 +156,12 @@ function ServerDetailInner() {
             {meta.os_version || ''}
           </div>
         </MetricCard>
+      </section>
+
+      {/* Uptime history (derived from report gaps) */}
+      <section className="card mb-6 p-5">
+        <h2 className="mb-3 text-sm font-semibold text-slate-800">Uptime history</h2>
+        <UptimeBar history={history} />
       </section>
 
       {/* Trend charts */}
